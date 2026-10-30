@@ -1,0 +1,147 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      aliases: ${{ steps.version.outputs.aliases }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - id: version
+        env:
+          TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$REF_TYPE" = tag
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then
+            echo 'prerelease=true' >> "$GITHUB_OUTPUT"
+            echo "aliases=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo 'prerelease=false' >> "$GITHUB_OUTPUT"
+            echo "aliases=${TAG#v} latest" >> "$GITHUB_OUTPUT"
+          fi
+  test:
+    needs: version
+    uses: ./.github/workflows/checks.yml
+  linux:
+    needs: [version, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build bundle
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+          ARCH: ${{ matrix.arch }}
+        run: sh scripts/build-release.sh "$TAG" "$ARCH" "$RUNNER_TEMP/dist"
+      - name: Verify extracted bundle without models
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir "$RUNNER_TEMP/bundle check"
+          tar -xzf "$RUNNER_TEMP/dist/quasard-$TAG-linux-$ARCH.tar.gz" -C "$RUNNER_TEMP/bundle check"
+          root="$RUNNER_TEMP/bundle check/quasard-$TAG-linux-$ARCH"
+          "$root/quasard" --version
+          "$root/quasard-tools" --version
+          "$root/bin/ffmpeg" -version
+          echo 'Runtime loader tested; model inference not tested.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/dist/*.tar.gz
+          retention-days: 7
+  windows:
+    needs: [version, test]
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build tools archive
+        shell: pwsh
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+          GOOS: windows
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          $name = "quasard-tools-$env:TAG-windows-$env:GOARCH"
+          $dir = Join-Path $env:RUNNER_TEMP $name
+          New-Item -ItemType Directory $dir | Out-Null
+          $stamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $flags = "-s -w -X github.com/maintainer64/quasard/internal/buildinfo.Version=$env:TAG -X github.com/maintainer64/quasard/internal/buildinfo.Commit=$env:GITHUB_SHA -X github.com/maintainer64/quasard/internal/buildinfo.Date=$stamp"
+          go build -trimpath -ldflags=$flags -o "$dir/quasard-tools.exe" ./cmd/quasard-tools
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:GOARCH -eq 'amd64') { & "$dir/quasard-tools.exe" --version; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+          Copy-Item LICENSE,THIRD_PARTY_NOTICES.md $dir
+          $noticePath = $dir.Replace('\', '/') + '/licenses'
+          bash scripts/go-notices.sh $noticePath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory "$dir/alice_server" | Out-Null
+          Copy-Item alice_server/aliceapi.desc "$dir/alice_server/"
+          'Tools only. Server requires Linux Docker/WSL2. voice-prep requires external full ffmpeg.exe.' | Set-Content "$dir/README.txt"
+          Compress-Archive -Path $dir -DestinationPath "$env:RUNNER_TEMP/$name.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-${{ matrix.arch }}
+          path: ${{ runner.temp }}/*.zip
+          retention-days: 7
+  image:
+    needs: [version, linux, windows]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/images.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+      aliases: ${{ needs.version.outputs.aliases }}
+      publish: true
+  release:
+    needs: [version, linux, windows, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Checksums and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          cd dist
+          sha256sum -- *.tar.gz *.zip > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          printf 'Version: %s\nCommit: %s\nImage: ghcr.io/%s:%s (linux/amd64, linux/arm64)\nLinux: glibc native bundles, models separate. Windows: tools only. Native model inference and station parity are not established by build checks.\n' "$TAG" "$GITHUB_SHA" "$GH_REPO" "$TAG" > BUILD-MANIFEST.txt
+          args=()
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
+          gh release create "$TAG" --verify-tag --generate-notes --notes-file BUILD-MANIFEST.txt "${args[@]}" -- *.tar.gz *.zip SHA256SUMS BUILD-MANIFEST.txt

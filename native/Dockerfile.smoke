@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-3.0-only
+FROM debian:trixie-slim AS native
+RUN apt-get update && apt-get install -y --no-install-recommends golang-go build-essential cmake ninja-build curl ca-certificates unzip git perl pkg-config ffmpeg && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY native /src/native
+RUN /bin/sh native/build.sh /opt/quasard /tmp/native-build && rm -rf /tmp/native-build
+ENV LD_LIBRARY_PATH=/opt/quasard/lib CGO_ENABLED=1
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal/audio ./internal/audio
+COPY internal/speech ./internal/speech
+RUN go test -tags native ./internal/audio ./internal/speech
+CMD ["go", "test", "-tags", "native", "-v", "./internal/speech", "-run", "TestNativeSmoke", "-count=1"]
