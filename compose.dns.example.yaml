@@ -1,0 +1,19 @@
+# Optional DNS deployment. Copy to compose.dns.yaml and use with compose.yaml.
+# Create ./configuration/config.toml from config.example.toml first.
+# DNS settings: listen="0.0.0.0:5353", answer_ipv4=LAN_IP,
+# allow_cidrs=["STATION_IP/32"], enabled=true when ready.
+services:
+  quasard:
+    environment:
+      ALICE_CONFIG: /app/configuration/config.toml
+    volumes:
+      # Directory bind makes atomic config-file replacement visible on SIGHUP.
+      - type: bind
+        source: ./configuration
+        target: /app/configuration
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "${QUASARD_LAN_IP:?Set QUASARD_LAN_IP to host LAN IPv4}:53:5353/udp"
+      - "${QUASARD_LAN_IP:?Set QUASARD_LAN_IP to host LAN IPv4}:53:5353/tcp"
