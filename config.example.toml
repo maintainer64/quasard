@@ -1,56 +1,91 @@
-# Скопируйте в config.toml и поправьте. Любой ключ можно переопределить переменной
-# окружения ALICE_<СЕКЦИЯ>_<КЛЮЧ>, например ALICE_LLM_API_KEY=gsk_...
-
+# Go CPU-only backend. Скопируйте в config.toml; личный конфиг не хранится в Git.
+# Локальные порты Docker Compose, без перенастройки колонки/сети.
+# ALICE_<SECTION>_<KEY> переопределяет значение файла.
+# GigaAM, F5/Edge/remote TTS и CUDA не поддерживаются: старый конфиг нужно перенести.
 [server]
 host = "0.0.0.0"
-https_port = 443          # 0 — не поднимать HTTPS (например, TLS снимает ваш прокси)
-http_port = 80            # 0 — не поднимать HTTP
+http_port = 8080
+https_port = 8443
 certfile = "certs/server.crt"
 keyfile = "certs/server.key"
-# Что подставить в get_sync_info → system_config.uniProxyUrl. Пусто — оставить wss://uniproxy.alice.yandex.net/uni.ws
-public_uniproxy_url = ""
 data_dir = "data"
+public_uniproxy_url = ""
 log_level = "INFO"
-log_traffic = true        # весь JSON-трафик uniproxy в data/traffic/*.jsonl
+log_traffic = false # Полный legacy traffic logging пока не реализован.
+
+# Optional DNS: exact rewrites/blocks, all other names forwarded. Not an HTTP proxy.
+# Enable LAN access only with explicit client ACL and LAN-IP answer.
+# Reload only this section with SIGHUP; Docker port mappings need recreation.
+[dns]
+enabled = false
+listen = "127.0.0.1:5353"
+upstreams = ["1.1.1.1:53", "9.9.9.9:53"]
+answer_ipv4 = "" # Host LAN IPv4, not Docker container address.
+answer_ipv6 = "" # Empty: rewritten names return no AAAA, not upstream IPv6.
+rewrite_hosts = [] # E.g. ["quasar.yandex.net", "uniproxy.alice.yandex.net"].
+block_hosts = [] # Exact names only, all IN types return NXDOMAIN; no subdomains/overlap.
+log_queries = false # Opt-in slog metadata (names are sensitive), max 100/sec globally.
+# Logs: REWRITE/FORWARD/BLOCK, qname/qtype/transport/rcode/duration; no packets/client ID.
+allow_cidrs = [] # LAN listener requires explicit CIDRs, preferably STATION_IP/32.
+ttl = 30
+timeout_ms = 2000
+max_concurrent = 64
+max_tcp_connections = 32
+rate_limit = 100 # Global queries/sec for UDP+TCP; excess UDP drops, TCP closes.
 
 [asr]
-engine = "gigaam"         # gigaam | openai
-model = "v3_e2e_rnnt"     # GigaAM v3 с пунктуацией; v3_e2e_ctc — чуть быстрее
-device = "auto"           # auto | cpu | cuda
-# Silero VAD: определяет конец фразы и вырезает тишину перед распознаванием
-vad_silence_ms = 700      # пауза, после которой фраза считается законченной
+engine = "vosk"
+model = "vosk-model-small-ru-0.22"
+model_path = "models/vosk-model-small-ru-0.22"
+vad_model_path = "alice_server/assets/silero_vad.onnx"
+device = "cpu"
+language = "ru"
+vad_silence_ms = 700
 vad_threshold = 0.5
+vad_energy_db = -68.0
 max_utterance_ms = 10000
 no_speech_timeout_ms = 5000
-
-[llm]
-# Любой OpenAI-совместимый API со стримингом. Groq (бесплатно): ключ на https://console.groq.com/keys
-base_url = "https://api.groq.com/openai/v1"
-api_key = ""              # или переменная окружения GROQ_API_KEY
-model = "qwen/qwen3.8-27b"
-# OpenRouter (бесплатные модели с суффиксом :free):
-#   base_url = "https://openrouter.ai/api/v1", model = "qwen/...:free"
-# Локально через Ollama: base_url = "http://127.0.0.1:11434/v1", model = "qwen3:8b"
-temperature = 0.6
-max_tokens = 400
-history_turns = 8
-history_ttl_s = 300        # через 5 минут тишины диалог начинается заново
-listen_after_question = true
-hold_response_ms = 400     # сколько ждать конца ответа LLM после готовности первой фразы
-extra_body = { reasoning_effort = "none" }  # без «размышлений» Qwen; сервер не принял — поле уберётся само
-# system_prompt = "..."
+partial_interval_ms = 300
 
 [tts]
-engine = "f5"              # f5 (клон голоса, tools/f5_server.py) | edge (онлайн, запасной) | openai
-f5_url = "http://127.0.0.1:8777/v1"
-f5_voice_id = "ref_voice_1"   # метка эталона для кэша; сменил голос — смени метку
-# edge: voice = "ru-RU-SvetlanaNeural", rate = "+0%"
+engine = "piper"
+model = "models/ru_RU-dmitri-medium.onnx"
+config_path = "models/ru_RU-dmitri-medium.onnx.json"
+
+[llm]
+# echo — локальная заглушка, не реальная LLM, платный API не вызывается.
+# Для реального SSE задайте OpenAI-совместимые base_url/model и ALICE_LLM_API_KEY.
+model = "echo"
+base_url = "http://127.0.0.1:8099/v1"
+api_key = ""
+temperature = 0.6
+max_tokens = 400
+timeout_s = 60
+history_turns = 8
+history_ttl_s = 300
+listen_after_question = true
+hold_response_ms = 400
+extra_body = {}
+# Optional model IDs on the SAME base_url/API key. Empty keeps model above.
+# Script-majority heuristic on ASR/text input; mixed ties/numbers use model.
+model_ru = ""
+model_en = ""
+max_tool_calls = 4 # Automatic tool chain budget per request; no confirmation.
+
+[mcp]
+enabled = false
+# Streamable HTTP only. No stdio commands; tools run automatically.
+# HTTP only on loopback; use HTTPS for remote endpoints.
+# [[mcp.servers]]
+# name = "home"
+# url = "https://mcp.example.org/mcp"
+# token_env = "HOME_MCP_TOKEN" # Secret value comes from environment, not TOML.
+# allowed_tools = ["weather"] # Optional restriction; omitted/[] allows all.
+
+[music]
+enabled = true
+token = ""
+quality = "mp3"
 
 [device]
-# Используются, если нет данных, импортированных из HAR (tools/import_har.py)
-name = "Яндекс Станция"
-display_name = "Хозяин"
-latitude = 55.7558
-longitude = 37.6173
 timezone = "Europe/Moscow"
-timezone_offset_sec = 10800

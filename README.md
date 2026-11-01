@@ -1,175 +1,154 @@
 # quasard
 
-Свой локальный бэкенд для Яндекс Станции вместо облака Алисы. Колонка активируется, слушает и отвечает через
-твой сервер и твои модели: распознавание речи **GigaAM**, ответы любой **LLM** со стримингом по фразам, озвучка
-**клоном твоего голоса** на F5-TTS и музыка из **Яндекс Музыки**. Наружу станция больше не ходит.
+Локальный исследовательский бэкенд для Яндекс Станции, переписываемый на Go. Цель — HTTP-моки активации и конфигурации, JSON/AAPI uniproxy, голосовой цикл **Vosk → LLM → Piper**, Silero VAD и Яндекс Музыка. Только CPU; Python/GPU для текущего сервера не нужны.
 
-> Неофициальный проект, не связан с Яндексом. Только для собственных устройств и в исследовательских целях.
-> Имя `quasard` — по внутреннему названию бэкенда умных устройств Яндекса (quasar).
+> **Миграция не завершена.** На Docker Linux ARM64 проверены реальные Vosk/Piper/Silero и JSON/AAPI голосовой round-trip через симулятор. Слышимый ответ реальной колонки, внешний LLM и Music OAuth/CDN ещё не подтверждены. Это не готовая замена облака и не обещание работы на Raspberry Pi с 1 ГБ RAM. Удаление старого кода эти пробелы не закрывает — см. [контракт parity](docs/parity.md).
 
-## Зачем
+Неофициальный проект, не связанный с Яндексом. Только собственные устройства и исследовательские цели. Ни запуск, ни приведённые ниже команды не перенастраивают DNS, роутер, колонку или доверенные сертификаты ОС. Внешние LLM и Яндекс Музыка требуют сети; полной автономности и отсутствия исходящего трафика проект не гарантирует.
 
-- приватность: голос и запросы обрабатываются локально, трафик к Яндексу обрезан;
-- свой «мозг»: любая LLM (локальная или облачная) вместо Алисы, свой характер через системный промпт;
-- свой голос: озвучка клоном голоса по короткому образцу;
-- колонка живёт без интернета и не обновляется на прошивку, которая всё сломает.
+## Текущее состояние
 
-## Как это работает
+- Go HTTP-моки активации/Glagol, private device store, JSON и descriptor-based AAPI WebSocket.
+- Локальные команды, OpenAI-совместимый streaming LLM, история и отмена запросов.
+- Опциональные RU/EN model ID и MCP Streamable HTTP: автоматическая ограниченная петля инструментов, опциональный allowlist — [настройка и ограничения](docs/LLM_MCP.md).
+- Go-клиент Яндекс Музыки, очередь и device-code OAuth; проверка с реальным аккаунтом отдельно.
+- Native Linux CPU bridge для Vosk, Piper и ONNX Runtime/Silero; нужны внешние модели.
+- `quasard-tools`: сертификаты, импорт HAR, симуляторы, fake LLM, Music login, нарезка аудио.
+- **Нет** GigaAM, F5/Edge/remote speech adapters и клонирования голоса. Piper не заменяет F5-клонирование. `voice-prep` только режет аудио, не расшифровывает и не выбирает образцы через VAD.
 
-```
-Яндекс Станция ──DNS доменов Яндекса → ваш сервер──> quasard
-                                                      │
-       HTTP (oauth / quasar / метрики)  ◄────────────┤  мок активации и конфигурации колонки
-                                                      │
-       WebSocket uniproxy (/uni.ws)     ◄────────────┘  голосовой цикл:
-         микрофон Ogg/Opus → Silero VAD (конец фразы) → GigaAM (речь в текст)
-         → LLM (стриминг ответа по фразам) → F5-TTS (голос) → Ogg/Opus на колонку
-```
+## Встроенный DNS
 
-Ответ LLM режется на фразы по знакам препинания: как только готова первая фраза, она сразу озвучивается и
-уходит на колонку, пока модель дописывает остальное. Поэтому станция начинает говорить почти сразу.
+Опциональный DNS-forwarder в том же процессе, без отдельного AdGuard. По умолчанию выключен. Точные имена из `rewrite_hosts` получают LAN-IP сервера; остальные запросы идут в заданные upstream DNS. Это **не proxy**: музыка/CDN и остальной трафик продолжают ходить напрямую.
 
-## Возможности
+Пример `[dns]` есть в `config.example.toml`. Для LAN задайте реальные значения:
 
-- **Активация колонки** без облака: oauth, `register`, `get_sync_info`, `device_list`, метрики — всё отвечает
-  сервер. Обновления прошивки заблокированы.
-- **Два протокола uniproxy:** JSON (прошивки ~1.56) и бинарный protobuf `AAPI` (прошивки 3.x) — сервер
-  определяет формат по первому кадру станции.
-- **Диалог** через любой OpenAI-совместимый API (Groq, Ollama, vLLM, LM Studio…), с историей и характером.
-- **Голос** — клон по образцу (F5-TTS ESpeech) или онлайн-запас (Edge TTS).
-- **Музыка** из Яндекс Музыки: «Моя волна», поиск по исполнителю/треку/альбому, «дальше», «назад», лайк,
-  дизлайк, пауза, громкость.
-- **Быстрые команды** мимо LLM: громкость, «стоп», bluetooth, сброс диалога.
-
-## Компоненты
-
-| Звено | Что используется | Где работает |
-|---|---|---|
-| Конец фразы, вырезание тишины | Silero VAD (`alice_server/assets/silero_vad.onnx`) | CPU |
-| Распознавание речи | GigaAM v3 `v3_e2e_rnnt` (с пунктуацией) | GPU |
-| Ответы | любой OpenAI-совместимый API со стримингом | облако или локально |
-| Озвучка | F5-TTS ESpeech (клон голоса) · Edge TTS (запас) | GPU / онлайн |
-| Музыка | Яндекс Музыка через `yandex-music` | онлайн |
-
-GigaAM и VAD занимают около 1 ГБ видеопамяти, F5-TTS — ещё около 3.4 ГБ.
-
-## Требования
-
-- Windows или Linux, видеокарта NVIDIA (проверялось на RTX 5080, 16 ГБ).
-- Python 3.12, [uv](https://github.com/astral-sh/uv), ffmpeg в PATH.
-- Роутер, где можно увести домены Яндекса на свой ПК (у автора — OpenWRT), и сертификат, которому доверяет
-  колонка (см. `docs/TRAFFIC_CAPTURE.md`).
-- Ключ к LLM-API (по умолчанию бесплатный [Groq](https://console.groq.com/keys)) или локальная LLM.
-
-## Установка
-
-```bash
-uv venv -p 3.12 .venv
-uv pip install -p .venv torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-uv pip install -p .venv -r requirements.txt
-copy config.example.toml config.toml
+```toml
+[dns]
+enabled = true
+listen = "0.0.0.0:5353"
+answer_ipv4 = "192.168.148.10" # Пример: заменить на LAN-IP сервера.
+rewrite_hosts = ["quasar.yandex.net", "uniproxy.alice.yandex.net"]
+allow_cidrs = ["192.168.148.143/32"] # Пример: заменить на IP Станции.
+upstreams = ["1.1.1.1:53", "9.9.9.9:53"]
 ```
 
-Клон голоса (F5-TTS) ставится отдельным окружением, чтобы не конфликтовать с GigaAM:
+Для Docker — opt-in override, не меняющий базовый Compose:
 
-```bash
-powershell -ExecutionPolicy Bypass -File tools\tts_bench\setup.ps1 -Model f5
+```sh
+mkdir configuration
+cp config.example.toml configuration/config.toml
+cp compose.dns.example.yaml compose.dns.yaml
+# Настроить configuration/config.toml, включая DNS, модели и HTTP/TLS.
+# Базовый Compose также требует существующий ./config.toml.
+export QUASARD_LAN_IP=192.168.148.10 # Заменить на LAN-IP хоста.
+docker compose -f compose.yaml -f compose.dns.yaml up -d
 ```
 
-## Настройка
+Override публикует TCP/UDP53 только на указанном LAN-IP → непривилегированный5353 контейнера; nonroot/cap_drop сохраняются. Убедитесь, что53 свободен; не открывайте рекурсивный DNS в WAN. В Keenetic назначьте этот LAN-IP как DNS **только Станции** — [инструкция](docs/KEENETIC.md). Docker/NAT может менять видимый IP источника: проверяйте его до настройки ACL. Не используйте `/0` и не направляйте upstream обратно в собственный DNS.
 
-Всё в `config.toml` (любой ключ переопределяется переменной окружения `ALICE_<СЕКЦИЯ>_<КЛЮЧ>`):
+Измените `configuration/config.toml`, затем:
 
-- `[server]` — порты, сертификаты, адрес uniproxy, папка данных;
-- `[asr]` — модель GigaAM, устройство, параметры VAD;
-- `[llm]` — `base_url`, `api_key`, модель, температура; системный промпт — в файле `system_prompt.txt`
-  (перечитывается на лету, перезапуск не нужен);
-- `[tts]` — движок (`f5` / `edge` / `openai`) и адрес сервиса F5;
-- `[music]` — включение Яндекс Музыки (токен получается через `tools/music_login.py`);
-- `[device]` — заглушки для ответов активации.
-
-## Запуск
-
-```bash
-.venv\Scripts\python -m alice_server
+```sh
+docker compose -f compose.yaml -f compose.dns.yaml kill -s HUP quasard
 ```
 
-Сервер поднимает HTTP (80) и HTTPS (443). Если выбран движок `f5`, `start.ps1` дополнительно запускает сервис
-клона голоса. Проверка без колонки:
+SIGHUP перечитывает **только DNS**: включение/выключение, правила, ACL, upstream и listen. Ошибка оставляет прежнюю конфигурацию. Модели, HTTP и голосовые сессии не перезапускаются. Для native Linux bundle — `kill -HUP <PID>`. Docker port mappings и environment не меняются через HUP: их изменение требует пересоздания контейнера.
 
-```bash
-.venv\Scripts\python tools\activation_sim.py --base https://127.0.0.1:8443   # активация
-.venv\Scripts\python tools\station_sim.py --text "Привет"                    # диалог
-.venv\Scripts\python tools\fake_llm.py                                       # поддельная LLM без ключа
+Directory bind `configuration/` позволяет редактору атомарно заменять файл. У обычного single-file bind `config.toml` замена через rename может оставить контейнер со старым inode; потребуется recreate либо контролируемая запись в тот же файл. Пути моделей остаются относительно `/app`, не каталога config. DNS env overrides `ALICE_DNS_*` фиксируются при старте; списки — JSON arrays, boolean — `true`/`false`.
+
+Без `answer_ipv6` подменённые имена получают пустой AAAA; HTTPS/SVCB для них тоже не уходят upstream. DNS не меняет HTTP-порт и не решает TLS trust. TTL/кэш клиента задерживает применение ответа. `/_ready` проверяет speech/HTTP, **не DNS**; DNS отдельно проверяется через `dig @SERVER_IP quasar.yandex.net A`, AAAA, `+tcp` и постороннее имя.
+
+Перед выключением DNS сначала верните Станции прежний профиль, иначе она останется без резолвинга. Настройка LAN и реальные запросы колонки автоматически не выполняются.
+
+## Linux bundle
+
+Linux AMD64/ARM64 bundle содержит сервер, tools, native runtime и ограниченный FFmpeg, **без моделей**. Это не static binary и не универсальный musl/Alpine-пакет.
+
+Распакуйте архив своей архитектуры в новую папку, проверьте SHA-256 по `SHA256SUMS`, перейдите в корень bundle. Пример после распаковки:
+
+```sh
+cp config.example.toml config.toml
+./quasard --version
+./quasard-tools --version
+./quasard-tools --help
+mkdir -p data models certs
 ```
 
-## Как направить колонку на сервер
+`config.toml` — личный файл, не добавляйте его в Git и не заменяйте новым примером поверх своих настроек. Если он уже существует, перенесите настройки вручную. Перед стартом подготовьте модели и TLS по следующим разделам, затем:
 
-Нужны подмена DNS (домены Яндекса → ваш ПК), принудительный DNS (чтобы колонка не обошла его) и сертификат,
-которому колонка доверяет. Подробно, с примерами для OpenWRT, — в **[docs/TRAFFIC_CAPTURE.md](docs/TRAFFIC_CAPTURE.md)**.
-
-## Голосовые команды
-
-| Сказать | Что делает |
-|---|---|
-| «включи музыку», «включи мою волну» | «Моя волна» твоего аккаунта |
-| «включи Элджея», «поставь Кино группа крови», «включи альбом …» | поиск и воспроизведение |
-| «дальше», «назад» | следующий/предыдущий трек |
-| «мне нравится» / «не нравится» | лайк / дизлайк (дизлайк переключает трек) |
-| «громче», «тише», «громкость пять» | громкость |
-| «пауза», «продолжи» | пауза и продолжение |
-| «что сейчас играет» | назвать трек |
-| любой вопрос | ответ LLM |
-
-## Клон голоса
-
-1. Запиши 10–15 секунд чистой речи без музыки.
-2. `tools/voice_prep.py` расшифрует запись и подберёт лучшие фрагменты (или возьми свой).
-3. Положи `ref_voice.wav` и `ref_voice.txt` (текст фрагмента) в `voice/`, запусти `tools/f5_server.py`.
-4. В `config.toml` поставь `engine = "f5"`.
-
-`tools/tts_bench/` — сравнение моделей озвучки (F5-TTS / XTTS / Chatterbox) по скорости и качеству.
-
-## Структура
-
-```
-alice_server/   сервер: протокол uniproxy, HTTP-эндпоинты, ASR, LLM, TTS, музыка
-  uniproxy.py   голосовой цикл, стриминг, JSON+protobuf
-  aliceapi.*    protobuf-протокол прошивок 3.x
-  http_api.py   активация и конфигурация колонки
-  asr.py        GigaAM + Silero VAD
-  llm.py        стриминг ответа по фразам
-  tts.py        синтез, music.py — Яндекс Музыка, intents.py — быстрые команды
-tools/          имитаторы станции/активации, вход в музыку, сервис F5, замеры TTS
-docs/           разбор прошивки и перехват трафика
+```sh
+./quasard --config config.toml
 ```
 
-## Прошивки
+Launcher запускается из корня bundle и разрешает относительные пути там. На Windows выпускаются **только `quasard-tools.exe` AMD64/ARM64**, не сервер. Для сервера на Windows нужен Linux-контейнер Docker Desktop/WSL2. Для `voice-prep` на Windows нужен отдельный полный `ffmpeg.exe`.
 
-- **~1.56** (2022): uniproxy по JSON, протокол восстановлен из трафика станции.
-- **3.x**: всегда бинарный protobuf (`AAPI`); сервер его поддерживает, схемы — в `alice_server/aliceapi.desc`,
-  восстановлены из прошивки. Разбор — в `docs/FIRMWARE_ANALYSIS.md`.
+## Модели и TLS
 
-## Ограничения
+Модели не включены в Git, Docker image или release bundle. Выберите доверенные источники, проверьте лицензии и контрольные суммы; не запускайте случайные установочные скрипты. Структура для примера конфигурации:
 
-- Прямые ссылки Яндекс Музыки отдаются через редирект — сервер проходит его за колонку (плеер старой прошивки
-  редирект не любит).
-- Качество голоса/скорость зависят от GPU; на слабой карте первая фраза приходит с задержкой ~1–2 с.
-- Бесплатные тарифы LLM-API ограничены по числу запросов в день.
+```text
+models/
+  vosk-model-small-ru-0.22/       # распакованная модель Vosk, не zip
+  ru_RU-dmitri-medium.onnx       # Piper
+  ru_RU-dmitri-medium.onnx.json  # конфигурация того же голоса Piper
+alice_server/assets/silero_vad.onnx
+```
 
-## Источники и благодарности
+Descriptor `alice_server/aliceapi.desc` и Silero asset сохраняются как ресурсы Go backend, а не Python runtime. Модель Piper и её JSON должны соответствовать друг другу. Лицензии зависимостей и моделей — отдельные от лицензии проекта, см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Код не копировался; проекты ниже — справочник по протоколу либо используемые библиотеки и модели.
+Для локального HTTPS tools создаёт свой CA и server certificate. Команда **записывает ключи в `certs/`**, но ничего не устанавливает в ОС. Не запускайте её поверх чужих сертификатов без проверки:
 
-- [v3rt3p/quasar-server](https://github.com/v3rt3p/quasar-server),
-  [https-proxy](https://github.com/v3rt3p/https-proxy),
-  [quasar-protos](https://github.com/v3rt3p/quasar-protos) — справочник по протоколу колонки.
-- [salute-developers/GigaAM](https://github.com/salute-developers/GigaAM) — распознавание речи (MIT).
-- [snakers4/silero-vad](https://github.com/snakers4/silero-vad) — детектор речи (MIT, лицензия в
-  `alice_server/assets/SILERO_VAD_LICENSE`).
-- [SWivid/F5-TTS](https://github.com/SWivid/F5-TTS) — код синтеза с клонированием голоса; русские веса
-  [ESpeech/ESpeech-TTS-1_RL-V2](https://huggingface.co/ESpeech/ESpeech-TTS-1_RL-V2) (Apache-2.0).
-- [Den4ikAI/ruaccent](https://github.com/Den4ikAI/ruaccent) — ударения для F5-TTS.
-- [MarshalX/yandex-music-api](https://github.com/MarshalX/yandex-music-api) — неофициальная библиотека Яндекс Музыки.
-- [PyAV](https://github.com/PyAV-Org/PyAV), [FastAPI](https://github.com/fastapi/fastapi),
-  [uvicorn](https://github.com/encode/uvicorn) и прочее из `requirements.txt`.
+```sh
+./quasard-tools certs --out certs --ip 127.0.0.1
+```
+
+В checkout вместо `./quasard-tools` можно использовать `go run ./cmd/quasard-tools`. Для локальных HTTP-проверок допустимо задать `server.https_port = 0`; для станции TLS и сеть требуют отдельного решения, не автоматической настройки.
+
+## Docker Compose: локальный стенд
+
+Требуется Docker с Linux-контейнерами. В доверенном checkout подготовьте `config.toml`, каталоги `data`, `models`, `certs`, модели и сертификаты. Затем при осознанном разрешении сборки/запуска:
+
+```sh
+docker compose up --build
+```
+
+На Windows `./start.ps1 -Build` выполняет ту же команду; без `-Build` — `docker compose up`. Python launcher удалён, автоматического поиска API-ключей и запуска F5 больше нет.
+
+Compose слушает **только loopback**: `http://127.0.0.1:8080` и `https://127.0.0.1:8443`. `config.toml` монтируется read-only в `/app/config.toml`, `models`/`certs` — read-only, `data` — writable. Порты в примере config должны соответствовать container ports Compose. Это стенд для компьютера, не инструкция подключения станции. Отсутствующий `config.toml` не создаётся автоматически как каталог.
+
+Compose не подменяет LLM-настройки конфигурации. Для внешнего API задайте `llm.base_url`, `llm.model`, ключ; для env-overrides добавьте нужные `ALICE_*` через локальный Compose override. Адрес `127.0.0.1` внутри контейнера — сам контейнер, не host. В Docker Desktop локальный host API обычно доступен через `host.docker.internal`; на Linux требуется отдельная настройка, см. [сеть](docs/NETWORKING.md).
+
+`/_ready` и `--healthcheck` проверяют readiness, включая прогрев speech; `/_status` показывает устройства и подключения. Отсутствующие модели/native runtime дают ошибку готовности, а не рабочий голосовой режим.
+
+## Конфигурация
+
+Единственный актуальный шаблон — [`config.example.toml`](config.example.toml). Порядок выбора файла:
+
+1. Явный `--config /path/config.toml`.
+2. Переменная `ALICE_CONFIG`, если флаг не задан.
+3. `config.toml` из рабочей директории.
+
+Явно выбранный через флаг или env отсутствующий/нечитаемый файл — ошибка. Только отсутствующий неявный `config.toml` оставляет встроенные defaults. Относительные пути моделей, TLS и данных разрешаются от **рабочей директории**, не от каталога выбранного config. Запускайте из корня checkout/bundle либо задавайте абсолютные пути.
+
+Значения `ALICE_<SECTION>_<KEY>` перекрывают TOML, например `ALICE_SERVER_HTTP_PORT=8080`, `ALICE_LLM_API_KEY=...`. `ALICE_CONFIG` выбирает файл, а не секцию. `llm.extra_body` из TOML заменяет defaults, через env задаётся JSON-объект.
+
+Пример включает безопасный `llm.model = "echo"`: локальная заглушка, не реальная LLM. Встроенные defaults без файла отличаются: порты 80/443 и внешняя LLM-конфигурация; используйте явный пример для стенда. Реальный API может тарифицироваться. Токены, `config.toml`, `data/`, `models/`, `certs/` и голосовые записи не должны попадать в Git.
+
+Старый Python TOML не совместим автоматически. Loader отклоняет GigaAM/F5/Edge/remote ASR/TTS engines, legacy speech options и `asr.device = "auto"/"cuda"` вместо молчаливого выбора Vosk/Piper. Начните с нового примера, перенесите server/LLM/device/music настройки вручную. Сейчас `asr.model_path` задаёт реальный путь Vosk, `asr.model` — имя; путь Piper — `tts.model`. Legacy `server.log_traffic` не означает, что полный старый traffic logger реализован.
+
+## Разработка и история
+
+```sh
+go test ./...
+go test -race ./...
+go vet ./...
+go run ./cmd/quasard-tools --help
+```
+
+Нужен Go 1.24+. Обычная сборка на macOS/Windows без Linux native backend годится для tools/протокольных тестов, но speech недоступен. Native build и реальные inference gates описаны в [GO_DEVELOPMENT.md](docs/GO_DEVELOPMENT.md).
+
+- [Состояние переноса, gaps и восстановление Python reference](docs/parity.md).
+- [Ручная настройка и ограничения сети](docs/NETWORKING.md).
+- [Keenetic: отдельная инструкция](docs/KEENETIC.md).
+
+Старый backend и Python tools удалены из активного дерева по разрешённой очистке. Reference commit `a142b19c997f3a8a4bed8f6b0aef4acd70e2436e` остаётся в Git; удаление не означает завершённого parity. Лицензия нового кода — [GPL-3.0-only](LICENSE), права на внешние ресурсы требуют отдельной проверки.
