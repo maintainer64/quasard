@@ -75,6 +75,7 @@ func TestNativeWhisperAutoRUEN(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("native cancellation: %v", err)
 	}
+	t.Logf("native cancellation=%s", time.Since(started))
 	if time.Since(started) > 3*time.Second {
 		t.Fatal("native cancellation took too long")
 	}

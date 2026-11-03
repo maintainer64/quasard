@@ -9,6 +9,8 @@ work=${2:-$(mktemp -d)}
 mkdir -p "$work/source" "$prefix/share/licenses"
 fetch 'https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/d1be6fde11ac6e0407606b4e42fe72d34add8037' 645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4 "$work/source.tgz"
 tar -xzf "$work/source.tgz" -C "$work/source" --strip-components=1
+# Forward inference cancellation into CPU graph execution, including language detection.
+git -C "$work/source" apply "$here/whisper-abort.patch"
 cmake -S "$work/source" -B "$work/build" -G Ninja \
  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib \
  -DCMAKE_INSTALL_RPATH="$prefix/lib" -DBUILD_SHARED_LIBS=ON \

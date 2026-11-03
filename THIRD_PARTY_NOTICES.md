@@ -29,3 +29,4 @@ separate distribution-approval variable.
 
 - whisper.cpp and its vendored ggml: MIT, pinned source d1be6fde11ac6e0407606b4e42fe72d34add8037 (v1.9.5).
   The upstream license is retained in native runtime/bundle notices. Whisper model weights are downloaded separately.
+  Local patch native/whisper-abort.patch forwards the configured cancellation callback to CPU graph execution.
