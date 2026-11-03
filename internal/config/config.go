@@ -47,6 +47,7 @@ type ASR struct {
 	PartialIntervalMS int     `toml:"partial_interval_ms"`
 }
 type LLM struct {
+	APIKeyEnv           string         `toml:"api_key_env"`
 	BaseURL             string         `toml:"base_url"`
 	APIKey              string         `toml:"api_key"`
 	Model               string         `toml:"model"`
@@ -107,14 +108,15 @@ type MCP struct {
 }
 
 type Config struct {
-	Server Server `toml:"server"`
-	ASR    ASR    `toml:"asr"`
-	LLM    LLM    `toml:"llm"`
-	TTS    TTS    `toml:"tts"`
-	Music  Music  `toml:"music"`
-	Device Device `toml:"device"`
-	DNS    DNS    `toml:"dns"`
-	MCP    MCP    `toml:"mcp"`
+	Server  Server                     `toml:"server"`
+	ASR     ASR                        `toml:"asr"`
+	LLM     LLM                        `toml:"llm"`
+	TTS     TTS                        `toml:"tts"`
+	Music   Music                      `toml:"music"`
+	Device  Device                     `toml:"device"`
+	Devices map[string]DeviceOverrides `toml:"devices"`
+	DNS     DNS                        `toml:"dns"`
+	MCP     MCP                        `toml:"mcp"`
 	// Root resolves relative resource paths; normally process working directory.
 	Root string `toml:"-"`
 }
@@ -162,6 +164,9 @@ func Load(path string) (Config, error) {
 		if err = toml.Unmarshal(data, &raw); err != nil {
 			return c, fmt.Errorf("parse config: %w", err)
 		}
+		if err := validateDeviceFields(raw); err != nil {
+			return c, err
+		}
 		if err := rejectLegacySpeechFields(raw); err != nil {
 			return c, err
 		}
@@ -199,8 +204,8 @@ func Load(path string) (Config, error) {
 	if err := ValidateDNS(c.DNS); err != nil {
 		return c, err
 	}
-	if c.LLM.MaxToolCalls < 0 || c.LLM.MaxToolCalls > 16 {
-		return c, fmt.Errorf("llm.max_tool_calls must be between 0 (default 4) and 16")
+	if err := c.validateLLMProfiles(); err != nil {
+		return c, err
 	}
 	if c.MCP.Enabled && (len(c.MCP.Servers) == 0 || len(c.MCP.Servers) > 8) {
 		return c, fmt.Errorf("mcp requires between 1 and 8 servers")

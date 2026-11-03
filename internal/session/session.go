@@ -13,7 +13,6 @@ import (
 	"math"
 	"net/http"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -139,6 +138,11 @@ func (s *Services) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.conns[id][c] = true
 	s.mu.Unlock()
+	connectedAt := time.Now()
+	slog.Info("station connected", "device", id, "peer", r.RemoteAddr)
+	defer func() {
+		slog.Info("station disconnected", "device", id, "connected_ms", time.Since(connectedAt).Milliseconds())
+	}()
 	defer func() {
 		c.mu.Lock()
 		c.closed = true
@@ -392,7 +396,7 @@ func (c *Session) startAnswer(ref, request string, seq int, t string, direct boo
 	go func() {
 		defer c.workers.Done()
 		if err := c.answer(ctx, gen, ref, request, seq, t, direct); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Warn("answer failed", "error", err)
+			slog.Warn("answer failed", "device", c.device, "request_id", request, "error", err)
 		}
 	}()
 }
@@ -407,6 +411,7 @@ func (c *Session) startVoice(ref, request string, seq int, id uint32, validate b
 	c.mu.Lock()
 	c.voice = v
 	c.mu.Unlock()
+	slog.Debug("voice input started", "device", c.device, "request_id", request, "stream_id", id)
 	c.logError("voice input acknowledgement failed", c.send(ctx, P.InputAck(ref), gen))
 	c.workers.Add(2)
 	go func() {
@@ -477,6 +482,9 @@ func (c *Session) startVoice(ref, request string, seq int, id uint32, validate b
 				}
 			}
 			if e != nil {
+				if !errors.Is(e, io.EOF) && !errors.Is(e, context.Canceled) && v.ctx.Err() == nil {
+					slog.Warn("audio decode failed", "device", c.device, "request_id", v.request, "error", e)
+				}
 				if !errors.Is(e, context.Canceled) && v.ctx.Err() == nil {
 					c.finalize(v, 0)
 				}
@@ -525,7 +533,7 @@ func (c *Session) onAudio(b []byte) {
 	v := c.voice
 	c.mu.Unlock()
 	if v != nil && v.id == id {
-		if _, err := v.pipe.Write(b[4:]); err != nil && v.ctx.Err() == nil {
+		if _, err := v.pipe.Write(b[4:]); err != nil && !errors.Is(err, io.ErrClosedPipe) && v.ctx.Err() == nil {
 			slog.Debug("audio stream write", "error", err)
 		}
 	}
@@ -575,18 +583,14 @@ func (c *Session) finalize(v *voice, reason int) {
 		flags := append([]bool(nil), v.flags...)
 		spoken := v.spoken
 		v.mu.Unlock()
+		slog.Debug("voice input finished", "device", c.device, "request_id", v.request, "audio_ms", len(pcm)*1000/16000, "elapsed_ms", time.Since(v.started).Milliseconds(), "speech_detected", spoken, "stop_reason", reason)
 		if v.ctx.Err() != nil || !c.current(v.gen) {
 			return
 		}
 		t := ""
 		if spoken && reason != 8 && c.svc.Speech != nil {
-			var e error
-			t, e = c.svc.Speech.Transcribe(v.ctx, speechOnly(pcm, flags))
-			if e != nil {
-				slog.Warn("ASR failed", "error", e)
-			}
+			t = c.transcribeVoice(v, pcm, flags)
 		}
-		t = strings.TrimSpace(wake.ReplaceAllString(strings.TrimSpace(t), ""))
 		c.logError("final ASR response failed", c.send(v.ctx, P.ASRResult(v.ref, t, 1, true, len(pcm)*1000/16000), v.gen))
 		c.logError("voice stream close response failed", c.send(v.ctx, P.Control(v.id, 0, 0), v.gen))
 		if v.validate {
@@ -611,7 +615,7 @@ func (c *Session) finalize(v *voice, reason int) {
 			go func() {
 				defer c.workers.Done()
 				if err := c.answer(answerCtx, v.gen, v.ref, v.request, v.seq, t, false); err != nil && !errors.Is(err, context.Canceled) {
-					slog.Warn("voice answer failed", "error", err)
+					slog.Warn("voice answer failed", "device", c.device, "request_id", v.request, "error", err)
 				}
 			}()
 		} else {

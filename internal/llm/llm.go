@@ -37,6 +37,7 @@ type Config struct {
 	ModelRU, ModelEN                               string
 	Tools                                          ToolClient
 	MaxToolCalls                                   int
+	Devices                                        map[string]Config
 }
 
 func DefaultConfig() Config {
@@ -59,6 +60,8 @@ type message struct {
 // are safe; requests snapshot history at start and append only on full success.
 type Dialog struct {
 	cfg          Config
+	devices      map[string]*Dialog
+	profile      string
 	client       *http.Client
 	mu           sync.Mutex
 	history      map[string][]message
@@ -70,6 +73,8 @@ type Dialog struct {
 }
 
 func New(cfg Config) *Dialog {
+	profiles := cfg.Devices
+	cfg.Devices = nil // Profiles form one routing level.
 	if cfg.Timezone == "" {
 		cfg.Timezone = "Europe/Moscow"
 	}
@@ -89,11 +94,28 @@ func New(cfg Config) *Dialog {
 		transport.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 		client = &http.Client{Transport: transport}
 	}
-	return &Dialog{cfg: cfg, client: client, history: make(map[string][]message), last: make(map[string]time.Time), extraOK: true}
+	dialog := &Dialog{cfg: cfg, profile: "default", client: client, history: make(map[string][]message), last: make(map[string]time.Time), extraOK: true}
+	if len(profiles) != 0 {
+		dialog.devices = make(map[string]*Dialog, len(profiles))
+		for id, profile := range profiles {
+			profile.Devices = nil
+			if profile.HTTPClient == nil {
+				profile.HTTPClient = client
+			}
+			dialog.devices[id] = New(profile)
+			dialog.devices[id].profile = id
+		}
+	}
+	return dialog
 }
 
 // Reset clears history but leaves last-use timestamp, matching reference behavior.
 func (d *Dialog) Reset(device string) {
+	if profile := d.devices[device]; profile != nil {
+		profile.Reset(device)
+		return
+	}
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	delete(d.history, device)
@@ -171,7 +193,18 @@ func (d *Dialog) remember(device, text, answer string) {
 // Stream emits complete, cleaned speech phrases. Neither partial output nor
 // callback/HTTP/cancellation errors commit a user/assistant history pair. Echo
 // mode never touches history. An empty successful answer is not remembered.
-func (d *Dialog) Stream(ctx context.Context, device, text string, emit func(string) error) error {
+func (d *Dialog) Stream(ctx context.Context, device, text string, emit func(string) error) (err error) {
+	if profile := d.devices[device]; profile != nil {
+		return profile.Stream(ctx, device, text, emit)
+	}
+
+	logger := requestLogger(ctx).With("device", device, "profile", d.profile)
+	ctx = WithLogger(ctx, logger)
+	started := time.Now()
+	logger.DebugContext(ctx, "LLM turn started", "model", d.cfg.Model, "tools_enabled", d.cfg.Tools != nil)
+	defer func() {
+		logger.DebugContext(ctx, "LLM turn finished", "elapsed_ms", time.Since(started).Milliseconds(), "result", outcome(err))
+	}()
 	if emit == nil {
 		return errors.New("llm: nil stream callback")
 	}
@@ -194,6 +227,7 @@ func (d *Dialog) Stream(ctx context.Context, device, text string, emit func(stri
 		return err
 	}
 	model, language := d.route(text)
+	logger.DebugContext(ctx, "LLM model selected", "model", model, "language", language)
 	if language != "" {
 		messages[0].Content += "\nRespond in " + language + ", matching the user's language."
 	}
@@ -218,7 +252,12 @@ func (d *Dialog) Stream(ctx context.Context, device, text string, emit func(stri
 		}
 		return nil
 	}
+	firstToken := true
 	err = d.tokens(ctx, model, messages, func(tok string) error {
+		if firstToken && tok != "" {
+			firstToken = false
+			logger.DebugContext(ctx, "LLM first token", "elapsed_ms", time.Since(started).Milliseconds(), "model", model)
+		}
 		if state != "normal" {
 			pending += tok
 			head := strings.TrimLeftFunc(pending, func(r rune) bool { return strings.TrimSpace(string(r)) == "" })
@@ -289,7 +328,7 @@ func (d *Dialog) tokens(ctx context.Context, model string, messages []message, e
 		req.Header.Set("Authorization", "Bearer "+d.apiKey())
 		req.Header.Set("Content-Type", "application/json")
 		stop := startReadTimeout(d.cfg.Timeout, cancelCause)
-		resp, err := d.client.Do(req)
+		resp, err := d.doRequest(req)
 		stop()
 		if err != nil {
 			cause := context.Cause(requestCtx)

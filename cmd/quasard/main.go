@@ -92,7 +92,9 @@ func run() error {
 	if err := level.UnmarshalText([]byte(cfg.Server.LogLevel)); err != nil {
 		return fmt.Errorf("server.log_level: %w", err)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	var logLevel slog.LevelVar
+	logLevel.Set(level)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: &logLevel})))
 	if *healthcheck {
 		if cfg.Server.HTTPPort <= 0 {
 			return errors.New("healthcheck requires HTTP listener")
@@ -110,6 +112,8 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	stopDebug := watchDebugLogging(ctx, &logLevel, level)
+	defer stopDebug()
 	dnsLoader, err := config.NewDNSLoader(*path)
 	if err != nil {
 		return err
@@ -131,22 +135,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load AliceAPI descriptor: %w", err)
 	}
-	lc := llm.DefaultConfig()
-	lc.BaseURL = cfg.LLM.BaseURL
-	lc.APIKey = cfg.LLM.APIKey
-	lc.Model = cfg.LLM.Model
-	lc.SystemPrompt = cfg.LLM.SystemPrompt
-	lc.SystemPromptFile = cfg.LLM.SystemPromptFile
-	lc.Root = cfg.Root
-	lc.Timezone = cfg.Device.Timezone
-	lc.Temperature = cfg.LLM.Temperature
-	lc.MaxTokens = cfg.LLM.MaxTokens
-	lc.HistoryTurns = cfg.LLM.HistoryTurns
-	lc.HistoryTTL = time.Duration(cfg.LLM.HistoryTTLS) * time.Second
-	lc.Timeout = time.Duration(cfg.LLM.TimeoutS * float64(time.Second))
-	lc.ExtraBody = cfg.LLM.ExtraBody
-	lc.ModelRU, lc.ModelEN = cfg.LLM.ModelRU, cfg.LLM.ModelEN
-	lc.MaxToolCalls = cfg.LLM.MaxToolCalls
+	var toolClient llm.ToolClient
 	if cfg.MCP.Enabled {
 		servers := make([]mcpclient.Server, 0, len(cfg.MCP.Servers))
 		for _, server := range cfg.MCP.Servers {
@@ -161,8 +150,13 @@ func run() error {
 				slog.Warn("MCP shutdown failed", "error", err)
 			}
 		}()
-		lc.Tools = tools
+		toolClient = tools
 	}
+	lc, err := dialogConfig(cfg, toolClient)
+	if err != nil {
+		return fmt.Errorf("LLM configuration: %w", err)
+	}
+	slog.Info("device profiles ready", "profiles", len(lc.Devices), "default_model", lc.Model)
 	m := music.New(music.Config{Enabled: cfg.Music.Enabled, Token: cfg.Music.Token, Quality: cfg.Music.Quality, TokenFile: filepath.Join(cfg.DataPath(), "music_token.json")})
 	sp := &engine{}
 	svc := session.New(cfg, llm.New(lc), m, sp, codec)

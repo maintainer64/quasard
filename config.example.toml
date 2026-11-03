@@ -76,6 +76,16 @@ model_ru = ""
 model_en = ""
 max_tool_calls = 4 # Automatic tool chain budget per request; no confirmation.
 
+# Optional exact device-id profiles; omitted LLM fields inherit [llm].
+# Secrets may also be stored as api_key in a private/encrypted config.
+# [devices."DEVICE_ID_KITCHEN".llm]
+# api_key_env = "KITCHEN_LLM_KEY" # Must exist in the container environment.
+# model = "your-model"
+# max_tokens = 200
+# [devices."DEVICE_ID_BEDROOM".llm]
+# api_key_env = "BEDROOM_LLM_KEY"
+# temperature = 0.3
+
 [mcp]
 enabled = false
 # Streamable HTTP only. No stdio commands; tools run automatically.

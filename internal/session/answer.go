@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/maintainer64/quasard/internal/audio"
 	"github.com/maintainer64/quasard/internal/intents"
+	"github.com/maintainer64/quasard/internal/llm"
 	"github.com/maintainer64/quasard/internal/music"
 	P "github.com/maintainer64/quasard/internal/protocol"
 )
@@ -18,7 +20,14 @@ import (
 func (c *Session) response(ctx context.Context, gen uint64, ref, request string, seq int, t string, actions []Map) error {
 	return c.send(ctx, P.Vins(ref, request, c.sid, seq, t, "", actions, false), gen)
 }
-func (c *Session) answer(ctx context.Context, gen uint64, ref, request string, seq int, t string, direct bool) error {
+func (c *Session) answer(ctx context.Context, gen uint64, ref, request string, seq int, t string, direct bool) (err error) {
+	started := time.Now()
+	logger := slog.Default().With("device", c.device, "request_id", request)
+	logger.DebugContext(ctx, "answer started", "direct_speech", direct)
+	defer func() {
+		logger.InfoContext(ctx, "answer finished", "elapsed_ms", time.Since(started).Milliseconds(), "cancelled", errors.Is(err, context.Canceled), "failed", err != nil && !errors.Is(err, context.Canceled))
+	}()
+	ctx = llm.WithLogger(ctx, slog.Default().With("request_id", request))
 	if !direct {
 		if in := intents.Match(t); in != nil {
 			if in.ResetDialog {
@@ -60,6 +69,11 @@ func (c *Session) speak(ctx context.Context, gen uint64, ref, request string, se
 	if c.svc.Speech == nil {
 		return errors.New("local speech engine not ready")
 	}
+	settings, err := c.svc.Config.LLMForDevice(c.device)
+	if err != nil {
+		return err
+	}
+	speechStarted := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
 	var workers sync.WaitGroup
 	workers.Add(2)
@@ -75,7 +89,12 @@ func (c *Session) speak(ctx context.Context, gen uint64, ref, request string, se
 	finished := false
 	go func() {
 		defer workers.Done()
+		firstPhrase := true
 		err := producer(func(t string) error {
+			if firstPhrase {
+				firstPhrase = false
+				slog.Debug("answer first phrase", "device", c.device, "request_id", request, "elapsed_ms", time.Since(speechStarted).Milliseconds())
+			}
 			if strings.TrimSpace(t) == "" {
 				return nil
 			}
@@ -108,7 +127,9 @@ func (c *Session) speak(ctx context.Context, gen uint64, ref, request string, se
 					errs <- nil
 					return
 				}
+				ttsStarted := time.Now()
 				pcm, e := c.svc.Speech.Synthesize(ctx, t)
+				slog.Debug("TTS phrase ready", "device", c.device, "request_id", request, "elapsed_ms", time.Since(ttsStarted).Milliseconds(), "failed", e != nil)
 				if e != nil {
 					errs <- e
 					cancel()
@@ -138,7 +159,7 @@ func (c *Session) speak(ctx context.Context, gen uint64, ref, request string, se
 		}
 		first = x
 	}
-	hold := time.Duration(c.svc.Config.LLM.HoldResponseMS) * time.Millisecond
+	hold := time.Duration(settings.HoldResponseMS) * time.Millisecond
 	if hold > 0 {
 		timer := time.NewTimer(hold)
 		defer timer.Stop()
@@ -166,7 +187,7 @@ card:
 	if full == "" {
 		full = first.text
 	}
-	listen := c.svc.Config.LLM.ListenAfterQuestion && done && strings.HasSuffix(strings.TrimSpace(full), "?")
+	listen := settings.ListenAfterQuestion && done && strings.HasSuffix(strings.TrimSpace(full), "?")
 	if err := c.send(ctx, P.Vins(ref, request, c.sid, seq, full, full, actions, listen), gen); err != nil {
 		return err
 	}
@@ -177,6 +198,7 @@ card:
 	if err := c.send(ctx, P.Speak(ref, id), gen); err != nil {
 		return err
 	}
+	slog.Debug("audio output started", "device", c.device, "request_id", request, "stream_id", id, "elapsed_ms", time.Since(speechStarted).Milliseconds())
 	writer := &streamWriter{session: c, ctx: ctx, id: id, gen: gen}
 	encoder, e := audio.NewEncoder(ctx, writer)
 	if e != nil {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/maintainer64/quasard/internal/mcpclient"
@@ -57,7 +58,9 @@ func (d *Dialog) toolTurn(ctx context.Context, device, text, model string, messa
 	if limit <= 0 {
 		limit = 4
 	}
+	discoveryStarted := time.Now()
 	tools, err := d.cfg.Tools.Discover(ctx)
+	requestLogger(ctx).DebugContext(ctx, "MCP discovery finished", "elapsed_ms", time.Since(discoveryStarted).Milliseconds(), "tool_count", len(tools), "result", outcome(err))
 	if err != nil {
 		return errors.New("llm: MCP discovery failed")
 	}
@@ -102,7 +105,10 @@ func (d *Dialog) toolTurn(ctx context.Context, device, text, model string, messa
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		toolStarted := time.Now()
+		requestLogger(ctx).DebugContext(ctx, "MCP tool started", "tool", call.Function.Name)
 		result, err := d.cfg.Tools.Call(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
+		requestLogger(ctx).DebugContext(ctx, "MCP tool finished", "tool", call.Function.Name, "elapsed_ms", time.Since(toolStarted).Milliseconds(), "result", outcome(err))
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -194,7 +200,7 @@ func (d *Dialog) toolCompletionAttempt(ctx context.Context, model string, messag
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+d.apiKey())
-	resp, err := d.client.Do(req)
+	resp, err := d.doRequest(req)
 	if err != nil {
 		return message{}, err
 	}
