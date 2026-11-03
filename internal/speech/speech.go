@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Package speech owns resident Vosk and Piper models and per-request Silero VAD.
+// Package speech owns resident Vosk/Whisper and Piper models and per-request Silero VAD.
 package speech
 
 import (
@@ -14,6 +14,8 @@ import (
 
 type PCM = audio.PCM
 type Config struct {
+	ASREngine, ASRLanguage, WhisperModel                                 string
+	ASRThreads                                                           int
 	VoskModel, VADModel, PiperModel, PiperConfig, EspeakData, LibraryDir string
 	PiperModelEN, PiperConfigEN                                          string
 }

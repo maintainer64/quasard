@@ -33,3 +33,16 @@ func TestRecognitionTextOnlyAtDebug(t *testing.T) {
 		}
 	}
 }
+
+type englishRecognitionSpeech struct{ fakeSpeech }
+
+func (englishRecognitionSpeech) Transcribe(context.Context, []int16) (string, error) {
+	return "Alice, what is the weather?", nil
+}
+func TestEnglishWakeWordNormalization(t *testing.T) {
+	c := &Session{svc: &Services{Speech: englishRecognitionSpeech{}}, device: "english"}
+	got := c.transcribeVoice(&voice{ctx: context.Background()}, make([]int16, 16000), nil)
+	if got != "what is the weather?" {
+		t.Fatal("English wake word not removed")
+	}
+}

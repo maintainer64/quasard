@@ -14,7 +14,7 @@
 | `internal/session`, `internal/aliceapi`, `internal/protocol` | JSON/AAPI WebSocket и сессии |
 | `internal/llm`, `internal/mcpclient` | OpenAI-совместимый LLM и автоматическая MCP-петля |
 | `internal/music` | Яндекс Музыка, очередь, авторизация |
-| `internal/speech`, `internal/audio`, `native` | Vosk/Piper/Silero, Opus, CPU bridge |
+| `internal/speech`, `internal/audio`, `native` | Vosk/Whisper/Piper/Silero, Opus, CPU bridge |
 | `internal/httpapi`, `internal/store`, `internal/dnsproxy` | HTTP-моки, приватные данные, DNS |
 | `alice_server/aliceapi.desc`, `alice_server/assets` | Сохранённые дескрипторы и Silero VAD, не Python-runtime |
 
@@ -39,7 +39,7 @@ go run ./cmd/quasard-tools certs --help
 go run ./cmd/quasard-tools fake-llm --help
 ```
 
-Go-бинарник сервера без native speech не является готовой заменой Docker-образа с Vosk/Piper. Для реального голоса используйте штатную Linux native-сборку.
+Go-бинарник сервера без native speech не является готовой заменой Docker-образа с Vosk/Whisper/Piper. Для реального голоса используйте штатную Linux native-сборку.
 
 ## Docker: готовый образ или сборка
 
@@ -53,7 +53,7 @@ docker build -t quasard-go:local .
 
 `Dockerfile` собирает CPU native bridge, Go-бинарники с `-tags native`, ограниченный набор аудиокодеков и минимальный distroless runtime. В финальном образе нет shell, Python, package manager или Go toolchain. Поэтому `docker exec ... sh` не подходит для диагностики; используйте CLI, HTTP и логи. Не добавляйте shell в production-образ ради одной проверки.
 
-Сборка загружает исходники/зависимости и требует сети. Большие Vosk/Piper-модели не включены: их устанавливает оператор по README. Silero VAD уже включён. Первый native build может быть долгим.
+Сборка загружает исходники/зависимости и требует сети. Большие ASR/Piper-модели не включены: их устанавливает оператор по README. Silero VAD уже включён. Первый native build может быть долгим.
 
 Для запуска локально собранного образа по station-рецепту выставьте `IMAGE=quasard-go:local` вместо `dev-1`; не выполняйте `docker pull` для локального тега. Сначала подготовьте конфиг, модели, права и сертификаты. Не используйте параллельно два сервиса на одних 53/80/443.
 
@@ -110,4 +110,6 @@ Linux-бандл использует включённый runtime и launcher `
 - На собственной Лайт (micro) установлен свой CA; владелец после перезагрузки подтвердил работу голосового ответа. Это ограниченный результат для конкретного устройства.
 - CI проверяет native-сборки/загрузку зависимостей/кодеки/упаковку, но не реальный аккаунт Music и не всю модельную inference-матрицу.
 
-Осталось: полная parity, реальный внешний LLM и production MCP, Music OAuth/CDN, двуязычный ASR/TTS, полные latency/RSS/startup-замеры, real-model AMD64 и low-memory устройства. Не заменяйте эти пункты успешной компиляцией. Контракт и исторический baseline — [parity.md](parity.md).
+Осталось: полная parity, реальный внешний LLM и production MCP, Music OAuth/CDN, микрофонный RU/EN ASR на реальных колонках, полные latency/RSS/startup-замеры, real-model AMD64 и low-memory устройства. Не заменяйте эти пункты успешной компиляцией. Контракт и исторический baseline — [parity.md](parity.md).
+
+Whisper auto RU/EN: [конфигурация, ресурсы и границы native-проверки](ASR_RU_EN.md).

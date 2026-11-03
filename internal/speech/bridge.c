@@ -12,8 +12,8 @@
 struct qs_engine { VoskModel *model; piper_synthesizer *piper; piper_synthesizer *piper_en; piper_synthesizer *active_piper; };
 qs_engine *qs_new(const char *model,const char *voice,const char *config,const char *espeak,char **error) {
  qs_engine *e=calloc(1,sizeof(*e)); if(!e){*error=strdup("allocation failed");return NULL;}
- vosk_set_log_level(-1);e->model=vosk_model_new(model);
- if(!e->model){*error=strdup("Vosk model load failed");qs_free(e);return NULL;}
+ if(model && model[0]) { vosk_set_log_level(-1);e->model=vosk_model_new(model);
+ if(!e->model){*error=strdup("Vosk model load failed");qs_free(e);return NULL;} }
  e->piper=qs_create_piper(voice,config,espeak,error);
  if(!e->piper){if(!*error)*error=strdup("Piper model load failed");qs_free(e);return NULL;}return e;
 }
@@ -24,7 +24,7 @@ int qs_add_english_voice(qs_engine *e,const char *voice,const char *config,const
  return 0;
 }
 void qs_free(qs_engine *e){if(!e)return;if(e->piper_en)piper_free(e->piper_en);if(e->piper)piper_free(e->piper);if(e->model)vosk_model_free(e->model);free(e);}
-void *qs_recognizer(qs_engine *e){return vosk_recognizer_new(e->model,16000.0f);}
+void *qs_recognizer(qs_engine *e){if(!e || !e->model)return NULL;return vosk_recognizer_new(e->model,16000.0f);}
 int qs_accept(void *r,const int16_t *pcm,int count){return vosk_recognizer_accept_waveform_s(r,pcm,count);}
 const char *qs_result(void *r){return vosk_recognizer_final_result(r);}
 void qs_recognizer_free(void *r){vosk_recognizer_free(r);}

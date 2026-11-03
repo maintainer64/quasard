@@ -7,6 +7,12 @@
 extern "C" {
 #endif
 typedef struct qs_engine qs_engine;
+typedef struct qs_whisper qs_whisper;
+qs_whisper *qs_whisper_new(const char *model,const char *language,int threads,char **error);
+void qs_whisper_free(qs_whisper *w);
+void qs_whisper_cancel(qs_whisper *w);
+void qs_whisper_reset(qs_whisper *w);
+int qs_whisper_transcribe(qs_whisper *w,const int16_t *pcm,int count,char **text);
 typedef struct qs_vad qs_vad;
 void *qs_create_piper(const char *voice,const char *config,const char *espeak,char **error);
 qs_engine *qs_new(const char *model,const char *voice,const char *config,const char *espeak,char **error);

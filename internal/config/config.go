@@ -30,6 +30,7 @@ type Server struct {
 
 // Legacy remote speech fields remain only for migration diagnostics in Load.
 type ASR struct {
+	Threads           int     `toml:"threads"`
 	Engine            string  `toml:"engine"`
 	Model             string  `toml:"model"`
 	ModelPath         string  `toml:"model_path"`
@@ -127,7 +128,7 @@ func Default() Config {
 		Root:   root,
 		DNS:    defaultDNS(),
 		Server: Server{Host: "0.0.0.0", HTTPSPort: 443, HTTPPort: 80, CertFile: "certs/server.crt", KeyFile: "certs/server.key", DataDir: "data", LogLevel: "INFO", LogTraffic: false},
-		ASR:    ASR{Engine: "vosk", Model: "vosk-model-small-ru-0.22", ModelPath: "models/vosk-model-small-ru-0.22", VADModelPath: "alice_server/assets/silero_vad.onnx", Device: "cpu", Language: "ru", VADSilenceMS: 700, VADThreshold: 0.5, VADEnergyDB: -68, MaxUtteranceMS: 10000, NoSpeechTimeoutMS: 5000, PartialIntervalMS: 300},
+		ASR:    ASR{Threads: 2, Engine: "vosk", Model: "vosk-model-small-ru-0.22", ModelPath: "models/vosk-model-small-ru-0.22", VADModelPath: "alice_server/assets/silero_vad.onnx", Device: "cpu", Language: "ru", VADSilenceMS: 700, VADThreshold: 0.5, VADEnergyDB: -68, MaxUtteranceMS: 10000, NoSpeechTimeoutMS: 5000, PartialIntervalMS: 300},
 		LLM:    LLM{BaseURL: "https://api.groq.com/openai/v1", Model: "qwen/qwen3.8-27b", Temperature: 0.6, MaxTokens: 400, TimeoutS: 60, HistoryTurns: 8, HistoryTTLS: 300, ExtraBody: map[string]any{"reasoning_effort": "none"}, ListenAfterQuestion: true, HoldResponseMS: 400, SystemPromptFile: "system_prompt.txt", SystemPrompt: "Ты — голосовой ассистент Алиса в умной колонке. Отвечай по-русски, коротко и по делу (1–3 предложения), разговорным языком. Никакой разметки, списков, эмодзи и ссылок — текст будет озвучен синтезатором речи. Числа и единицы пиши так, как их произносят."},
 		TTS:    TTS{Engine: "piper", Model: "models/ru_RU-dmitri-medium.onnx"},
 		Music:  Music{Enabled: true, Quality: "high"},
@@ -210,8 +211,14 @@ func Load(path string) (Config, error) {
 	if c.MCP.Enabled && (len(c.MCP.Servers) == 0 || len(c.MCP.Servers) > 8) {
 		return c, fmt.Errorf("mcp requires between 1 and 8 servers")
 	}
-	if c.ASR.Engine != "vosk" {
-		return c, fmt.Errorf("asr.engine=%q is unsupported: Go CPU-only backend requires vosk; migrate using config.example.toml (no GigaAM/remote ASR)", c.ASR.Engine)
+	if c.ASR.Engine != "vosk" && c.ASR.Engine != "whisper" {
+		return c, fmt.Errorf("asr.engine=%q is unsupported: use local vosk or whisper (CPU-only)", c.ASR.Engine)
+	}
+	if c.ASR.Engine == "whisper" && (c.ASR.Threads < 1 || c.ASR.Threads > 8) {
+		return c, fmt.Errorf("asr.threads must be between 1 and 8 for whisper")
+	}
+	if c.ASR.Engine == "whisper" && c.ASR.Language != "auto" && c.ASR.Language != "ru" && c.ASR.Language != "en" {
+		return c, fmt.Errorf("asr.language must be auto, ru or en for whisper")
 	}
 	if c.TTS.ConfigPathEN != "" && c.TTS.ModelEN == "" {
 		return c, fmt.Errorf("tts.config_path_en requires tts.model_en")
@@ -244,7 +251,7 @@ func rejectLegacySpeechFields(raw map[string]any) error {
 			env := "ALICE_" + strings.ToUpper(section.name+"_"+key)
 			_, inEnv := os.LookupEnv(env)
 			if inFile || inEnv {
-				return fmt.Errorf("unsupported legacy speech setting %s.%s / %s: Go backend supports only local Vosk/Piper; remove this option and migrate using config.example.toml", section.name, key, env)
+				return fmt.Errorf("unsupported legacy speech setting %s.%s / %s: Go backend supports only local Vosk/Whisper/Piper; remove this option and migrate using config.example.toml", section.name, key, env)
 			}
 		}
 	}

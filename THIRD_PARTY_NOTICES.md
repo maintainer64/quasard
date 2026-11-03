@@ -26,3 +26,6 @@ Do not interpret the new root LICENSE as a relicensing of the reference implemen
 Include required corresponding source and notices when distributing built images or archives.
 PR images and tag releases publish automatically after their build/test checks; there is no
 separate distribution-approval variable.
+
+- whisper.cpp and its vendored ggml: MIT, pinned source d1be6fde11ac6e0407606b4e42fe72d34add8037 (v1.9.5).
+  The upstream license is retained in native runtime/bundle notices. Whisper model weights are downloaded separately.

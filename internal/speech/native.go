@@ -6,7 +6,7 @@ package speech
 /*
 #cgo CFLAGS: -I/opt/quasard/include
 #cgo CXXFLAGS: -I/opt/quasard/include
-#cgo LDFLAGS: -L/opt/quasard/lib -Wl,-rpath,/opt/quasard/lib -lvosk -lpiper -lonnxruntime -lstdc++ -lm -ldl
+#cgo LDFLAGS: -L/opt/quasard/lib -Wl,-rpath,/opt/quasard/lib -lvosk -lwhisper -lggml -lpiper -lonnxruntime -lstdc++ -lm -ldl
 #include "bridge.h"
 #include <stdlib.h>
 */
@@ -19,7 +19,11 @@ import (
 	"unsafe"
 )
 
-type backend struct{ ptr *C.qs_engine }
+type backend struct {
+	ptr         *C.qs_engine
+	whisper     *C.qs_whisper
+	whisperSlot chan struct{}
+}
 type vadBackend struct{ ptr *C.qs_vad }
 
 func cstr(s string) (*C.char, func()) {
@@ -34,7 +38,23 @@ func nativeError(p *C.char) error {
 	return fmt.Errorf("native speech: %s", C.GoString(p))
 }
 func newBackend(cfg Config) (*backend, error) {
-	m, f := cstr(cfg.VoskModel)
+	if cfg.ASREngine != "" && cfg.ASREngine != "vosk" && cfg.ASREngine != "whisper" {
+		return nil, fmt.Errorf("unsupported local ASR engine")
+	}
+	if cfg.ASREngine == "whisper" && (cfg.ASRThreads < 0 || cfg.ASRThreads > 8) {
+		return nil, fmt.Errorf("Whisper threads must be between 1 and 8")
+	}
+	if cfg.ASREngine == "whisper" && cfg.WhisperModel == "" {
+		return nil, fmt.Errorf("Whisper model path is required")
+	}
+	if cfg.ASREngine != "whisper" && cfg.VoskModel == "" {
+		return nil, fmt.Errorf("Vosk model path is required")
+	}
+	model := cfg.VoskModel
+	if cfg.ASREngine == "whisper" {
+		model = ""
+	}
+	m, f := cstr(model)
 	defer f()
 	v, g := cstr(cfg.PiperModel)
 	defer g()
@@ -65,10 +85,39 @@ func newBackend(cfg Config) (*backend, error) {
 			return nil, nativeError(err)
 		}
 	}
-	return &backend{p}, nil
+	b := &backend{ptr: p}
+	if cfg.ASREngine == "whisper" {
+		model, releaseModel := cstr(cfg.WhisperModel)
+		defer releaseModel()
+		language := cfg.ASRLanguage
+		if language == "" {
+			language = "auto"
+		}
+		lang, releaseLanguage := cstr(language)
+		defer releaseLanguage()
+		threads := cfg.ASRThreads
+		if threads == 0 {
+			threads = 2
+		}
+		b.whisper = C.qs_whisper_new(model, lang, C.int(threads), &err)
+		if b.whisper == nil {
+			C.qs_free(p)
+			return nil, nativeError(err)
+		}
+		b.whisperSlot = make(chan struct{}, 1)
+	}
+	return b, nil
 }
-func (b *backend) close() { C.qs_free(b.ptr) }
+func (b *backend) close() {
+	if b.whisper != nil {
+		C.qs_whisper_free(b.whisper)
+	}
+	C.qs_free(b.ptr)
+}
 func (b *backend) transcribe(ctx context.Context, pcm []int16) (string, error) {
+	if b.whisper != nil {
+		return b.transcribeWhisper(ctx, pcm)
+	}
 	r := C.qs_recognizer(b.ptr)
 	if r == nil {
 		return "", fmt.Errorf("create Vosk recognizer failed")

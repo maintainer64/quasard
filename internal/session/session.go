@@ -572,7 +572,7 @@ func (c *Session) control(sc Map) {
 	}
 }
 
-var wake = regexp.MustCompile(`(?i)^(?:алиса[,.!?: ]*)+`)
+var wake = regexp.MustCompile(`(?i)^(?:(?:алиса|alice)[,.!?: ]*)+`)
 
 func (c *Session) finalize(v *voice, reason int) {
 	v.once.Do(func() {

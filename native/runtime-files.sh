@@ -7,7 +7,7 @@ mkdir -p "$root/usr/local/bin" "$root/opt/quasard/lib" "$root/opt/quasard/share"
 cp /opt/quasard/bin/ffmpeg "$root/usr/local/bin/"
 cp -a /opt/quasard/share/espeak-ng-data "$root/opt/quasard/share/"
 cp -a /opt/quasard/share/licenses/. "$root/usr/share/licenses/quasard/"
-for file in /opt/quasard/lib/libvosk.so /opt/quasard/lib/libpiper.so* /opt/quasard/lib/libonnxruntime.so*; do
+for file in /opt/quasard/lib/libvosk.so /opt/quasard/lib/libwhisper.so* /opt/quasard/lib/libggml*.so* /opt/quasard/lib/libpiper.so* /opt/quasard/lib/libonnxruntime.so*; do
  [ -f "$file" ] || continue
  cp -a "$file" "$root/opt/quasard/lib/$(basename "$file")"
 done

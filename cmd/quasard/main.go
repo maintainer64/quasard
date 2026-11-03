@@ -194,7 +194,9 @@ func run() error {
 			return cfg.Resolve(path)
 		}
 		value, e := speech.New(speech.Config{
-			VoskModel: cfg.Resolve(cfg.ASR.ModelPath), VADModel: cfg.Resolve(cfg.ASR.VADModelPath),
+			ASREngine: cfg.ASR.Engine, ASRLanguage: cfg.ASR.Language, ASRThreads: cfg.ASR.Threads,
+			WhisperModel: cfg.Resolve(cfg.ASR.ModelPath),
+			VoskModel:    cfg.Resolve(cfg.ASR.ModelPath), VADModel: cfg.Resolve(cfg.ASR.VADModelPath),
 			PiperModel: cfg.Resolve(cfg.TTS.Model), PiperConfig: resolveOptional(cfg.TTS.ConfigPath),
 			PiperModelEN: resolveOptional(cfg.TTS.ModelEN), PiperConfigEN: resolveOptional(cfg.TTS.ConfigPathEN),
 			LibraryDir: dir, EspeakData: os.Getenv("QUASARD_ESPEAK_DATA"),
@@ -206,7 +208,7 @@ func run() error {
 		if e != nil {
 			slog.Error("local speech startup failed", "error", e)
 		} else {
-			slog.Info("local speech ready")
+			slog.Info("local speech ready", "asr_engine", cfg.ASR.Engine, "asr_language", cfg.ASR.Language)
 		}
 	}()
 	var servers []*http.Server
