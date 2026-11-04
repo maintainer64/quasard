@@ -35,7 +35,8 @@ type Hooks struct {
 	Say           func(context.Context, string, string) error
 	Push          func(context.Context, string, map[string]any) error
 	// Ready returns nil when model services are ready. No hook means HTTP ready.
-	Ready func() error
+	Ready      func() error
+	DebugAudio http.Handler
 }
 
 var ErrNotConnected = errors.New("device is not connected")
@@ -122,6 +123,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if (p == "/push" || p == "/ws") && h.hooks.PushWebSocket != nil {
 		h.hooks.PushWebSocket.ServeHTTP(w, r)
+		return
+	}
+	if p == "/_debug/audio" || strings.HasPrefix(p, "/_debug/audio/") {
+		if h.hooks.DebugAudio == nil {
+			http.NotFound(w, r)
+			return
+		}
+		h.hooks.DebugAudio.ServeHTTP(w, r)
 		return
 	}
 	q := r.URL.Query()

@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -42,5 +43,26 @@ func TestDebugSignalToggleAndShutdown(t *testing.T) {
 				t.Fatal("stopped watcher changed the log level")
 			}
 		})
+	}
+}
+
+func TestDebugOffClearsAudioCapture(t *testing.T) {
+	var level slog.LevelVar
+	level.Set(slog.LevelDebug)
+	var clears atomic.Int32
+	signals := make(chan os.Signal, 2)
+	stop := runLogLevelWatch(context.Background(), signals, &level, slog.LevelDebug, func() { clears.Add(1) })
+	defer stop()
+	signals <- os.Interrupt
+	deadline := time.After(time.Second)
+	for clears.Load() != 1 {
+		select {
+		case <-deadline:
+			t.Fatal("DEBUG off did not clear audio")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if level.Level() != slog.LevelInfo {
+		t.Fatal("debug still enabled")
 	}
 }

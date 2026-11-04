@@ -217,3 +217,24 @@ func TestHTTPServer(t *testing.T) {
 		t.Fatal(response.Status)
 	}
 }
+
+func TestDebugAudioHookAndMissingHook(t *testing.T) {
+	h, _ := testAPI(t)
+	for _, path := range []string{"/_debug/audio", "/_debug/audio/", "/_debug/audio/unknown/input.wav"} {
+		w, _ := request(t, h, http.MethodGet, path, "")
+		if w.Code != http.StatusNotFound {
+			t.Fatal("debug route fell through to station fallback", path)
+		}
+	}
+	called := false
+	h, _ = testAPI(t, Hooks{DebugAudio: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "audio/wav")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("RIFF"))
+	})})
+	w, _ := request(t, h, http.MethodGet, "/_debug/audio/test/input.wav", "")
+	if !called || w.Body.String() != "RIFF" || w.Header().Get("Content-Type") != "audio/wav" {
+		t.Fatal("audio hook not delegated")
+	}
+}

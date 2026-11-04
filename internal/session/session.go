@@ -20,6 +20,7 @@ import (
 	"github.com/maintainer64/quasard/internal/aliceapi"
 	"github.com/maintainer64/quasard/internal/audio"
 	"github.com/maintainer64/quasard/internal/config"
+	"github.com/maintainer64/quasard/internal/debugaudio"
 	"github.com/maintainer64/quasard/internal/llm"
 	"github.com/maintainer64/quasard/internal/music"
 	P "github.com/maintainer64/quasard/internal/protocol"
@@ -35,15 +36,16 @@ type Speaker interface {
 	Synthesize(context.Context, string) (speech.PCM, error)
 }
 type Services struct {
-	Config   config.Config
-	Dialog   *llm.Dialog
-	Music    *music.Music
-	Speech   Speaker
-	Codec    *aliceapi.Codec
-	mu       sync.Mutex
-	conns    map[string]map[*Session]bool
-	closing  bool
-	handlers sync.WaitGroup
+	DebugAudio *debugaudio.Store
+	Config     config.Config
+	Dialog     *llm.Dialog
+	Music      *music.Music
+	Speech     Speaker
+	Codec      *aliceapi.Codec
+	mu         sync.Mutex
+	conns      map[string]map[*Session]bool
+	closing    bool
+	handlers   sync.WaitGroup
 }
 
 func New(cfg config.Config, d *llm.Dialog, m *music.Music, sp Speaker, c *aliceapi.Codec) *Services {

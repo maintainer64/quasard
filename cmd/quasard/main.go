@@ -19,6 +19,7 @@ import (
 	"github.com/maintainer64/quasard/internal/aliceapi"
 	"github.com/maintainer64/quasard/internal/buildinfo"
 	"github.com/maintainer64/quasard/internal/config"
+	"github.com/maintainer64/quasard/internal/debugaudio"
 	"github.com/maintainer64/quasard/internal/dnsproxy"
 	"github.com/maintainer64/quasard/internal/httpapi"
 	"github.com/maintainer64/quasard/internal/llm"
@@ -112,7 +113,9 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	stopDebug := watchDebugLogging(ctx, &logLevel, level)
+	debugAudio := debugaudio.New(func() bool { return logLevel.Level() <= slog.LevelDebug })
+	defer debugAudio.Clear()
+	stopDebug := watchDebugLogging(ctx, &logLevel, level, debugAudio.Clear)
 	defer stopDebug()
 	dnsLoader, err := config.NewDNSLoader(*path)
 	if err != nil {
@@ -160,7 +163,8 @@ func run() error {
 	m := music.New(music.Config{Enabled: cfg.Music.Enabled, Token: cfg.Music.Token, Quality: cfg.Music.Quality, TokenFile: filepath.Join(cfg.DataPath(), "music_token.json")})
 	sp := &engine{}
 	svc := session.New(cfg, llm.New(lc), m, sp, codec)
-	h, err := httpapi.NewWithError(cfg, httpapi.Hooks{WebSocket: svc, Connections: svc.Connections, Ready: sp.ready, Say: func(ctx context.Context, id, text string) error {
+	svc.DebugAudio = debugAudio
+	h, err := httpapi.NewWithError(cfg, httpapi.Hooks{DebugAudio: debugAudio, WebSocket: svc, Connections: svc.Connections, Ready: sp.ready, Say: func(ctx context.Context, id, text string) error {
 		err := svc.Say(ctx, id, text)
 		if errors.Is(err, session.ErrNotConnected) {
 			return httpapi.ErrNotConnected
