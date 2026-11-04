@@ -33,7 +33,7 @@ max_concurrent = 64
 max_tcp_connections = 32
 rate_limit = 100 # Global queries/sec for UDP+TCP; excess UDP drops, TCP closes.
 
-# Automatic RU/EN alternative: see docs/ASR_RU_EN.md.
+# Automatic selection is restricted to RU/EN: see docs/ASR_RU_EN.md.
 # engine="whisper", model_path="models/ggml-base-q5_1.bin", language="auto", threads=2
 [asr]
 engine = "vosk"

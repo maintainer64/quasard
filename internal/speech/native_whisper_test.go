@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/maintainer64/quasard/internal/audio"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/maintainer64/quasard/internal/audio"
 )
 
 func TestNativeWhisperAutoRUEN(t *testing.T) {
@@ -32,10 +34,10 @@ func TestNativeWhisperAutoRUEN(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	var last []int16
-	for _, tc := range []struct{ speech, word string }{
-		{"Привет, Алиса. Расскажи какая сегодня погода.", "погод"},
-		{"Hello Alice, what is the weather like today?", "weather"},
-		{"Алиса, какая сегодня погода за окном?", "погод"},
+	for _, tc := range []struct{ speech, word, language string }{
+		{"Привет, Алиса. Расскажи какая сегодня погода.", "погод", "ru"},
+		{"Hello Alice, what is the weather like today?", "weather", "en"},
+		{"Алиса, какая сегодня погода за окном?", "погод", "ru"},
 	} {
 		pcm, err := engine.Synthesize(ctx, tc.speech)
 		if err != nil {
@@ -57,13 +59,18 @@ func TestNativeWhisperAutoRUEN(t *testing.T) {
 			t.Fatal(err)
 		}
 		started := time.Now()
-		text, err := engine.Transcribe(ctx, decoded.Samples)
+		var diagnostics bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&diagnostics, &slog.HandlerOptions{Level: slog.LevelDebug})).With("device", "smoke", "request_id", tc.language)
+		text, err := engine.Transcribe(WithLogger(ctx, logger), decoded.Samples)
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Logf("audio=%.2fs asr=%s transcript=%q", float64(len(decoded.Samples))/16000, time.Since(started), text)
 		if !strings.Contains(strings.ToLower(text), tc.word) {
 			t.Fatalf("automatic RU/EN recognition failed: %q", text)
+		}
+		if log := diagnostics.String(); !strings.Contains(log, "language="+tc.language+" mode=auto_ru_en") || !strings.Contains(log, "device=smoke") || !strings.Contains(log, "ru_probability=") || !strings.Contains(log, "en_probability=") {
+			t.Fatalf("missing or incorrect per-utterance language diagnostics: %s", log)
 		}
 		last = decoded.Samples
 	}

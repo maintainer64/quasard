@@ -12,7 +12,14 @@ qs_whisper *qs_whisper_new(const char *model,const char *language,int threads,ch
 void qs_whisper_free(qs_whisper *w);
 void qs_whisper_cancel(qs_whisper *w);
 void qs_whisper_reset(qs_whisper *w);
-int qs_whisper_transcribe(qs_whisper *w,const int16_t *pcm,int count,char **text);
+typedef struct qs_whisper_result {
+ char *text;
+ const char *language;
+ int automatic;
+ float ru_probability;
+ float en_probability;
+} qs_whisper_result;
+int qs_whisper_transcribe(qs_whisper *w,const int16_t *pcm,int count,qs_whisper_result *result);
 typedef struct qs_vad qs_vad;
 void *qs_create_piper(const char *voice,const char *config,const char *espeak,char **error);
 qs_engine *qs_new(const char *model,const char *voice,const char *config,const char *espeak,char **error);

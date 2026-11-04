@@ -11,6 +11,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"unsafe"
 )
@@ -40,10 +41,10 @@ func (b *backend) transcribeWhisper(ctx context.Context, pcm []int16) (string, e
 		}
 	}()
 	defer func() { close(done); <-stopped }()
-	var text *C.char
-	status := C.qs_whisper_transcribe(b.whisper, (*C.int16_t)(unsafe.Pointer(&pcm[0])), C.int(len(pcm)), &text)
-	if text != nil {
-		defer C.free(unsafe.Pointer(text))
+	var result C.qs_whisper_result
+	status := C.qs_whisper_transcribe(b.whisper, (*C.int16_t)(unsafe.Pointer(&pcm[0])), C.int(len(pcm)), &result)
+	if result.text != nil {
+		defer C.free(unsafe.Pointer(result.text))
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -51,5 +52,18 @@ func (b *backend) transcribeWhisper(ctx context.Context, pcm []int16) (string, e
 	if status != 0 {
 		return "", fmt.Errorf("Whisper transcription failed (status %d)", int(status))
 	}
-	return strings.TrimSpace(C.GoString(text)), nil
+	logger := requestLogger(ctx)
+	if result.automatic != 0 {
+		logger.DebugContext(ctx, "Whisper language selected", "language", C.GoString(result.language), "mode", "auto_ru_en", "ru_probability", float32(result.ru_probability), "en_probability", float32(result.en_probability))
+	} else {
+		logger.DebugContext(ctx, "Whisper language selected", "language", C.GoString(result.language), "mode", "fixed")
+	}
+	return strings.TrimSpace(C.GoString(result.text)), nil
+}
+
+func requestLogger(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(loggerContextKey{}).(*slog.Logger); ok && logger != nil {
+		return logger
+	}
+	return slog.Default()
 }

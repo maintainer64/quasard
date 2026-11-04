@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/maintainer64/quasard/internal/debugaudio"
+	"github.com/maintainer64/quasard/internal/speech"
 )
 
 func (c *Session) transcribeVoice(v *voice, pcm []int16, flags []bool) string {
@@ -27,7 +28,7 @@ func (c *Session) transcribeVoice(v *voice, pcm []int16, flags []bool) string {
 		}
 	}
 	started := time.Now()
-	raw, err := c.svc.Speech.Transcribe(v.ctx, input)
+	raw, err := c.svc.Speech.Transcribe(speech.WithLogger(v.ctx, logger), input)
 	text := strings.TrimSpace(wake.ReplaceAllString(strings.TrimSpace(raw), ""))
 	if captureID != "" {
 		c.svc.DebugAudio.Finish(captureID, raw, text, err != nil, time.Since(started).Milliseconds())
