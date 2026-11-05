@@ -15,7 +15,6 @@ Do not interpret the new root LICENSE as a relicensing of the reference implemen
 
 - alice_server/assets/silero_vad.onnx: retain accompanying SILERO_VAD_LICENSE (MIT).
 - alice_server/aliceapi.desc: recovered firmware descriptors; rights/provenance must be checked before redistribution.
-- Vosk API: Apache-2.0; each downloaded model has its own license, to be retained.
 - Piper libpiper: GPL-3.0; espeak-ng, ONNX Runtime and bundled dependencies retain their own notices.
 - Piper voice models: verify the full artifact license; dataset license alone is insufficient.
 - FFmpeg: build/license depends on enabled codecs and configuration; preserve the runtime package copyright notices.
@@ -26,10 +25,6 @@ Do not interpret the new root LICENSE as a relicensing of the reference implemen
 Include required corresponding source and notices when distributing built images or archives.
 PR images and tag releases publish automatically after their build/test checks; there is no
 separate distribution-approval variable.
-
-- whisper.cpp and its vendored ggml: MIT, pinned source d1be6fde11ac6e0407606b4e42fe72d34add8037 (v1.9.5).
-  The upstream license is retained in native runtime/bundle notices. Whisper model weights are downloaded separately.
-  Local patch native/whisper-abort.patch forwards the configured cancellation callback to CPU graph execution.
 
 - GigaAM v3_e2e_rnnt: MIT, source pinned to salute-developers/GigaAM
   7447938d791c4f3e643386ee22c33777004293a5. Exported ONNX weights and the complete

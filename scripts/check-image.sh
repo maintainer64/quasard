@@ -13,4 +13,4 @@ docker run --rm -i --network none --entrypoint /usr/local/bin/ffmpeg "$image" -v
 docker run --rm -i --network none --entrypoint /usr/local/bin/ffmpeg "$image" -v error -f ogg -i pipe:0 -ar 16000 -ac 1 -f s16le pipe:1 < "$work/output.ogg" > "$work/output.pcm"
 size=$(wc -c < "$work/output.pcm")
 [ "$size" -ge 31000 ] && [ "$size" -le 33000 ]
-printf 'Codec runtime passed; real Vosk/Piper/Silero inference NOT tested.\n'
+printf 'Codec runtime passed; real GigaAM/Piper/Silero inference NOT tested.\n'

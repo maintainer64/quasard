@@ -199,9 +199,9 @@ func run() error {
 		}
 		value, e := speech.New(speech.Config{
 			ASREngine: cfg.ASR.Engine, ASRLanguage: cfg.ASR.Language, ASRThreads: cfg.ASR.Threads,
-			WhisperModel: cfg.Resolve(cfg.ASR.ModelPath), GigaAMModel: cfg.Resolve(cfg.ASR.ModelPath),
-			VoskModel: cfg.Resolve(cfg.ASR.ModelPath), VADModel: cfg.Resolve(cfg.ASR.VADModelPath),
-			PiperModel: cfg.Resolve(cfg.TTS.Model), PiperConfig: resolveOptional(cfg.TTS.ConfigPath),
+			GigaAMModel: cfg.Resolve(cfg.ASR.ModelPath),
+			VADModel:    cfg.Resolve(cfg.ASR.VADModelPath),
+			PiperModel:  cfg.Resolve(cfg.TTS.Model), PiperConfig: resolveOptional(cfg.TTS.ConfigPath),
 			PiperModelEN: resolveOptional(cfg.TTS.ModelEN), PiperConfigEN: resolveOptional(cfg.TTS.ConfigPathEN),
 			LibraryDir: dir, EspeakData: os.Getenv("QUASARD_ESPEAK_DATA"),
 		})

@@ -22,7 +22,7 @@ func TestNativeGigaAM(t *testing.T) {
 		t.Skip("set QUASARD_GIGAAM_MODEL and QUASARD_SMOKE_MODELS")
 	}
 	engine, err := New(Config{ASREngine: "gigaam", ASRLanguage: "ru", ASRThreads: 2,
-		GigaAMModel: directory, VoskModel: "/must-not-load-vosk",
+		GigaAMModel:  directory,
 		PiperModel:   filepath.Join(voices, "ru_RU-irina-medium.onnx"),
 		PiperModelEN: filepath.Join(voices, "en_US-hfc_female-medium.onnx"),
 		EspeakData:   "/opt/quasard/share/espeak-ng-data"})

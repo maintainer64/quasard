@@ -6,8 +6,6 @@ COPY native/build.sh native/fetch.sh ./native/
 RUN sh native/build.sh /opt/quasard /var/tmp/quasard-native && rm -rf /var/tmp/quasard-native
 COPY native/build-audio.sh ./native/
 RUN sh native/build-audio.sh /opt/quasard /var/tmp/quasard-audio && rm -rf /var/tmp/quasard-audio
-COPY native/build-whisper.sh native/whisper-abort.patch ./native/
-RUN sh native/build-whisper.sh /opt/quasard /var/tmp/quasard-whisper && rm -rf /var/tmp/quasard-whisper
 ENV CGO_ENABLED=1 LD_LIBRARY_PATH=/opt/quasard/lib
 COPY go.mod go.sum ./
 RUN go mod download
@@ -26,6 +24,7 @@ RUN sh scripts/go-notices.sh /opt/quasard/share/licenses
 RUN sh native/runtime-files.sh /runtime && mkdir -p /runtime/app/data /runtime/app/models /runtime/app/certs && chown -R 10001:10001 /runtime/app
 
 FROM build AS speech-test
+COPY alice_server/assets/silero_vad.onnx /silero_vad.onnx
 RUN go test -tags native -c -o /speech-test ./internal/speech
 ENV PATH=/opt/quasard/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENTRYPOINT ["/speech-test"]

@@ -18,7 +18,7 @@ func download(s *Store, method, path string) *httptest.ResponseRecorder {
 	return w
 }
 func clip() Clip {
-	return Clip{DeviceID: "station", RequestID: "turn", Engine: "whisper", Language: "auto", Input: []int16{-32768, 0, 32767, 123}, Recognition: []int16{123}}
+	return Clip{DeviceID: "station", RequestID: "turn", Engine: "gigaam", Language: "ru", Input: []int16{-32768, 0, 32767, 123}, Recognition: []int16{123}}
 }
 func mustCapture(t *testing.T, s *Store, c Clip) string {
 	t.Helper()

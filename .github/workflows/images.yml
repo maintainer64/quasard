@@ -52,17 +52,16 @@ jobs:
           "$root/quasard" --version
           "$root/quasard-tools" --version
           "$root/bin/ffmpeg" -version
-      - name: Check automatic Russian and English ASR
+      - name: Build native speech tests
         if: inputs.publish
         run: |
           docker buildx build --load --target speech-test \
             --tag quasard-speech-check:local \
             --build-arg VERSION=${{ inputs.tag }} \
             --build-arg COMMIT=${{ github.sha }} .
-          sh scripts/check-whisper.sh quasard-speech-check:local "$RUNNER_TEMP/asr-check"
       - name: Check native CPU GigaAM
         if: inputs.publish
-        run: sh scripts/check-gigaam.sh quasard-speech-check:local "$RUNNER_TEMP/asr-check/models"
+        run: sh scripts/check-gigaam.sh quasard-speech-check:local "$RUNNER_TEMP/asr-check"
       - name: Registry login
         if: inputs.publish
         uses: docker/login-action@v3

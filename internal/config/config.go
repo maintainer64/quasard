@@ -128,7 +128,7 @@ func Default() Config {
 		Root:   root,
 		DNS:    defaultDNS(),
 		Server: Server{Host: "0.0.0.0", HTTPSPort: 443, HTTPPort: 80, CertFile: "certs/server.crt", KeyFile: "certs/server.key", DataDir: "data", LogLevel: "INFO", LogTraffic: false},
-		ASR:    ASR{Threads: 2, Engine: "vosk", Model: "vosk-model-small-ru-0.22", ModelPath: "models/vosk-model-small-ru-0.22", VADModelPath: "alice_server/assets/silero_vad.onnx", Device: "cpu", Language: "ru", VADSilenceMS: 700, VADThreshold: 0.5, VADEnergyDB: -68, MaxUtteranceMS: 10000, NoSpeechTimeoutMS: 5000, PartialIntervalMS: 300},
+		ASR:    ASR{Threads: 2, Engine: "gigaam", Model: "v3_e2e_rnnt", ModelPath: "/opt/quasard/models/gigaam", VADModelPath: "alice_server/assets/silero_vad.onnx", Device: "cpu", Language: "ru", VADSilenceMS: 700, VADThreshold: 0.5, VADEnergyDB: -68, MaxUtteranceMS: 10000, NoSpeechTimeoutMS: 5000, PartialIntervalMS: 300},
 		LLM:    LLM{BaseURL: "https://api.groq.com/openai/v1", Model: "qwen/qwen3.8-27b", Temperature: 0.6, MaxTokens: 400, TimeoutS: 60, HistoryTurns: 8, HistoryTTLS: 300, ExtraBody: map[string]any{"reasoning_effort": "none"}, ListenAfterQuestion: true, HoldResponseMS: 400, SystemPromptFile: "system_prompt.txt", SystemPrompt: "Ты — голосовой ассистент Алиса в умной колонке. Отвечай по-русски, коротко и по делу (1–3 предложения), разговорным языком. Никакой разметки, списков, эмодзи и ссылок — текст будет озвучен синтезатором речи. Числа и единицы пиши так, как их произносят."},
 		TTS:    TTS{Engine: "piper", Model: "models/ru_RU-dmitri-medium.onnx"},
 		Music:  Music{Enabled: true, Quality: "high"},
@@ -211,14 +211,11 @@ func Load(path string) (Config, error) {
 	if c.MCP.Enabled && (len(c.MCP.Servers) == 0 || len(c.MCP.Servers) > 8) {
 		return c, fmt.Errorf("mcp requires between 1 and 8 servers")
 	}
-	if c.ASR.Engine != "vosk" && c.ASR.Engine != "whisper" && c.ASR.Engine != "gigaam" {
-		return c, fmt.Errorf("asr.engine=%q is unsupported: use local vosk, whisper or gigaam (CPU-only)", c.ASR.Engine)
+	if c.ASR.Engine != "gigaam" {
+		return c, fmt.Errorf("asr.engine=%q is unsupported: only local gigaam is available (CPU-only)", c.ASR.Engine)
 	}
-	if (c.ASR.Engine == "whisper" || c.ASR.Engine == "gigaam") && (c.ASR.Threads < 1 || c.ASR.Threads > 8) {
+	if c.ASR.Threads < 1 || c.ASR.Threads > 8 {
 		return c, fmt.Errorf("asr.threads must be between 1 and 8")
-	}
-	if c.ASR.Engine == "whisper" && c.ASR.Language != "auto" && c.ASR.Language != "ru" && c.ASR.Language != "en" {
-		return c, fmt.Errorf("asr.language must be auto, ru or en for whisper")
 	}
 	if c.TTS.ConfigPathEN != "" && c.TTS.ModelEN == "" {
 		return c, fmt.Errorf("tts.config_path_en requires tts.model_en")
@@ -229,25 +226,21 @@ func Load(path string) (Config, error) {
 	if c.ASR.Device != "cpu" {
 		return c, fmt.Errorf("asr.device=%q is unsupported: Go backend is CPU-only; use cpu", c.ASR.Device)
 	}
-	if c.ASR.Engine == "gigaam" {
-		if c.ASR.Model != "v3_e2e_rnnt" || c.ASR.ModelPath == "" {
-			return c, fmt.Errorf("asr.model must be v3_e2e_rnnt with an exported ONNX model_path for gigaam")
-		}
-		if c.ASR.Language != "ru" {
-			return c, fmt.Errorf("asr.language must be ru for GigaAM v3_e2e_rnnt")
-		}
-		if c.ASR.MaxUtteranceMS > 25000 {
-			return c, fmt.Errorf("GigaAM max_utterance_ms must not exceed 25000")
-		}
+	if c.ASR.Model != "v3_e2e_rnnt" || c.ASR.ModelPath == "" {
+		return c, fmt.Errorf("asr.model must be v3_e2e_rnnt with an exported ONNX model_path for gigaam")
 	}
-	if c.ASR.Engine != "gigaam" && strings.HasPrefix(strings.ToLower(c.ASR.Model), "v3_") {
-		return c, fmt.Errorf("asr.model=%q is a GigaAM model: select asr.engine=gigaam and an exported ONNX model_path", c.ASR.Model)
+	if c.ASR.Language != "ru" {
+		return c, fmt.Errorf("asr.language must be ru for GigaAM v3_e2e_rnnt")
 	}
+	if c.ASR.MaxUtteranceMS > 25000 {
+		return c, fmt.Errorf("GigaAM max_utterance_ms must not exceed 25000")
+	}
+
 	return c, nil
 }
 
 // These options belong to removed Python adapters. Reject their presence, even
-// when empty, rather than accepting a config that silently uses Vosk/Piper.
+// when empty, rather than accepting a config that silently uses GigaAM/Piper.
 func rejectLegacySpeechFields(raw map[string]any) error {
 	for _, section := range []struct {
 		name string
@@ -262,7 +255,7 @@ func rejectLegacySpeechFields(raw map[string]any) error {
 			env := "ALICE_" + strings.ToUpper(section.name+"_"+key)
 			_, inEnv := os.LookupEnv(env)
 			if inFile || inEnv {
-				return fmt.Errorf("unsupported legacy speech setting %s.%s / %s: Go backend supports only local Vosk/Whisper/Piper; remove this option and migrate using config.example.toml", section.name, key, env)
+				return fmt.Errorf("unsupported legacy speech setting %s.%s / %s: Go backend supports only local GigaAM/Piper; remove this option and migrate using config.example.toml", section.name, key, env)
 			}
 		}
 	}

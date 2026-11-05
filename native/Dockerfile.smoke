@@ -4,8 +4,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends golang-go build
 WORKDIR /src
 COPY native /src/native
 RUN /bin/sh native/build.sh /opt/quasard /tmp/native-build && rm -rf /tmp/native-build
-RUN /bin/sh native/build-whisper.sh /opt/quasard /tmp/whisper-build && rm -rf /tmp/whisper-build
 ENV LD_LIBRARY_PATH=/opt/quasard/lib CGO_ENABLED=1
+COPY scripts/assemble-gigaam.sh ./scripts/
+COPY models/gigaam /tmp/gigaam-parts
+RUN sh scripts/assemble-gigaam.sh /tmp/gigaam-parts /opt/quasard/models/gigaam && rm -rf /tmp/gigaam-parts
+COPY alice_server/assets/silero_vad.onnx /silero_vad.onnx
+ENV QUASARD_GIGAAM_MODEL=/opt/quasard/models/gigaam QUASARD_SMOKE_VAD=/silero_vad.onnx
 COPY go.mod go.sum ./
 RUN go mod download
 COPY internal/audio ./internal/audio

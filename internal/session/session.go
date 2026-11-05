@@ -222,7 +222,6 @@ type voice struct {
 	spoken       bool
 	lastSpeech   int
 	spotterEnd   bool
-	flags        []bool
 	finalized    bool
 	started      time.Time
 	gen          uint64
@@ -470,7 +469,6 @@ func (c *Session) startVoice(ref, request string, seq int, id uint32, validate b
 					return
 				}
 				v.pcm = append(v.pcm, samples...)
-				v.flags = append(v.flags, voiced)
 				duration := len(v.pcm) * 1000 / 16000
 				if voiced && (!v.spotterEnd || duration > 300) {
 					v.spoken = true
@@ -582,7 +580,6 @@ func (c *Session) finalize(v *voice, reason int) {
 		v.mu.Lock()
 		v.finalized = true
 		pcm := append([]int16(nil), v.pcm...)
-		flags := append([]bool(nil), v.flags...)
 		spoken := v.spoken
 		v.mu.Unlock()
 		slog.Debug("voice input finished", "device", c.device, "request_id", v.request, "audio_ms", len(pcm)*1000/16000, "elapsed_ms", time.Since(v.started).Milliseconds(), "speech_detected", spoken, "stop_reason", reason)
@@ -591,7 +588,7 @@ func (c *Session) finalize(v *voice, reason int) {
 		}
 		t := ""
 		if spoken && reason != 8 && c.svc.Speech != nil {
-			t = c.transcribeVoice(v, pcm, flags)
+			t = c.transcribeVoice(v, pcm)
 		}
 		c.logError("final ASR response failed", c.send(v.ctx, P.ASRResult(v.ref, t, 1, true, len(pcm)*1000/16000), v.gen))
 		c.logError("voice stream close response failed", c.send(v.ctx, P.Control(v.id, 0, 0), v.gen))

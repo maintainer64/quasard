@@ -1,7 +1,7 @@
 # quasard — локальный бэкенд для Яндекс Станции
 
 Go-сервер, который принимает часть запросов Станции вместо облака: активация и конфигурация, голосовой WebSocket,
-локальные команды и цепочка **GigaAM/Vosk/Whisper → LLM → Piper** с Silero VAD. Работает на CPU; Python и GPU в контейнере не нужны.
+локальные команды и цепочка **GigaAM → LLM → Piper** с Silero VAD. Работает на CPU; Python и GPU в контейнере не нужны.
 
 **Основной сценарий:** один готовый Docker-контейнер на компьютере, собственный сертификат в своей колонке и DNS этого
 компьютера в настройках Keenetic. Никаких отдельных LAN-стеков, NAT/DNAT, установки CA на роутер или перенаправления
@@ -9,7 +9,7 @@ HTTPS через роутер не требуется.
 
 > Проект экспериментальный, неофициальный и не связан с Яндексом. На собственной **Станции Лайт (micro)** установлен
 > собственный CA; после перезагрузки владелец подтвердил работу голосового ответа. В Docker Linux ARM64 проверены реальные
-> Vosk/Piper/Silero и JSON/AAPI. Это не гарантия для любой прошивки, не полная замена облака и не обещание работы на
+> GigaAM/Piper/Silero и JSON/AAPI. Это не гарантия для любой прошивки, не полная замена облака и не обещание работы на
 > Raspberry Pi с 1 ГБ RAM. Внешний LLM и реальное воспроизведение Яндекс Музыки требуют отдельной проверки.
 > Подробности — [статус совместимости](docs/parity.md).
 
@@ -38,7 +38,7 @@ HTTPS через роутер не требуется.
                └─ остальные имена           → обычные upstream DNS
 
 Станция → компьютер:80/443 → HTTP-моки / голосовой WebSocket
-                                → GigaAM/Vosk/Whisper → LLM → Piper → ответ колонки
+                                → GigaAM → LLM → Piper → ответ колонки
 ```
 
 DNS только сообщает IP. Он не проксирует весь интернет-трафик Станции и не отменяет проверку TLS. Поэтому нужны **оба
@@ -89,76 +89,44 @@ umask 077
 mkdir -p configuration data models certs
 ```
 
-`configuration/`, `data/`, `models/`, `certs/` исключены из Git. В них будут ваши настройки, токены, модели и ключи.
+`configuration/`, `data/`, `certs/` и локальные модели исключены из Git.
+Исключение — публичный набор GigaAM в `models/gigaam/`. Личные настройки, токены и ключи храните отдельно.
 Ничего из этого не нужно прикладывать к issue или публиковать.
 
-## 2. Скачать модели
+## 2. Подготовить модели
 
-Для автоматического русского/английского распознавания доступен
-[Whisper с language=auto](docs/ASR_RU_EN.md). Для русского доступен
-[GigaAM v3_e2e_rnnt через native ONNX Runtime](docs/ASR_GIGAAM.md). Пример ниже оставляет прежний Vosk.
+Распознавание выполняет только [GigaAM v3_e2e_rnnt](docs/ASR_GIGAAM.md) на CPU.
+Готовые ONNX-веса включены в Docker-образ: скачивать ASR-модель при запуске не нужно.
+Silero VAD также включён и определяет конец фразы, сохраняя непрерывный звук.
+В Linux bundle используйте `model_path = "models/gigaam"`; в Docker —
+`model_path = "/opt/quasard/models/gigaam"`. Модель распознаёт русский язык.
 
-В готовом образе есть библиотеки GigaAM/Vosk/Whisper/Piper и Silero VAD, готовая GigaAM v3_e2e_rnnt; голоса Piper и другие ASR-модели скачиваются отдельно. Начальный
-вариант: `vosk-model-small-ru-0.22` и русский голос `ru_RU-dmitri-medium`.
-
-Ниже закреплены ревизии файлов и SHA-256 из проверенного набора артефактов. Это контроль целостности, не независимая
-подпись поставщика. Перед использованием и распространением изучите лицензии
-моделей: [Vosk](https://huggingface.co/rhasspy/vosk-models), [Piper voices](https://huggingface.co/rhasspy/piper-voices).
-
-Скачивания и распаковку делаем в новые пустые каталоги, не поверх исходников или действующей модели:
+Отдельно нужны голоса [Piper](https://huggingface.co/rhasspy/piper-voices):
+Irina для русского и hfc_female для английской озвучки. Закреплённые URL, SHA-256
+и размеры находятся в `native/asr-smoke-models.lock`. Из корня checkout:
 
 ```sh
 (
 set -eu
 STAGE=$(mktemp -d "$PWD/models/.download-XXXXXXXX")
-mkdir "$STAGE/vosk-download" "$STAGE/vosk-extract" \
-  "$STAGE/piper-model" "$STAGE/piper-config"
-
-curl --fail --location --output "$STAGE/vosk-download/model.zip" \
-  'https://huggingface.co/rhasspy/vosk-models/resolve/8e5f85a35b402c35022b5af62c101dd6a06d0219/ru/vosk-model-small-ru-0.22.zip'
-curl --fail --location --output "$STAGE/piper-model/ru_RU-dmitri-medium.onnx" \
-  'https://huggingface.co/rhasspy/piper-voices/resolve/b4e358ffcb232591bf73a540e70f7de528e4174a/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx'
-curl --fail --location --output "$STAGE/piper-config/ru_RU-dmitri-medium.onnx.json" \
-  'https://huggingface.co/rhasspy/piper-voices/resolve/b4e358ffcb232591bf73a540e70f7de528e4174a/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx.json'
-
-# OpenSSL есть и в Linux, и в macOS; после любой ошибки дальше не продолжать.
-check_sha256() {
-  actual=$(openssl dgst -sha256 -r "$1" | cut -d ' ' -f 1)
-  test "$actual" = "$2"
-}
-check_sha256 "$STAGE/vosk-download/model.zip" \
-  961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4 || exit 1
-check_sha256 "$STAGE/piper-model/ru_RU-dmitri-medium.onnx" \
-  f073356ebc4bd0f80c5af58df2953a5988bd5bdab1eb38635ce960b071fbefcb || exit 1
-check_sha256 "$STAGE/piper-config/ru_RU-dmitri-medium.onnx.json" \
-  667ef3117bc642c2892dff7690d8bdc8ca4228aeaa783b2dc1416df632855e0d || exit 1
-
-unzip -Z1 "$STAGE/vosk-download/model.zip" > "$STAGE/vosk-entries.txt"
-# Только ожидаемый корень, без выхода из каталога и символических ссылок.
-if grep -Ev '^vosk-model-small-ru-0\.22(/|$)' "$STAGE/vosk-entries.txt" || \
-   grep -E '(^|/)\.\.?(/|$)|\\' "$STAGE/vosk-entries.txt"; then
-  printf '%s\n' 'Неожиданное содержимое ZIP; остановка.' >&2
-  exit 1
-fi
-unzip -Z -l "$STAGE/vosk-download/model.zip" > "$STAGE/vosk-attributes.txt"
-if grep -E '^l' "$STAGE/vosk-attributes.txt"; then exit 1; fi
-unzip -q "$STAGE/vosk-download/model.zip" -d "$STAGE/vosk-extract"
-test -s "$STAGE/vosk-extract/vosk-model-small-ru-0.22/am/final.mdl" || exit 1
-
-# Не заменять существующие модели без отдельного решения.
-test ! -e models/vosk-model-small-ru-0.22 || exit 1
-test ! -e models/ru_RU-dmitri-medium.onnx || exit 1
-test ! -e models/ru_RU-dmitri-medium.onnx.json || exit 1
-mv "$STAGE/vosk-extract/vosk-model-small-ru-0.22" models/
-mv "$STAGE/piper-model/ru_RU-dmitri-medium.onnx" models/
-mv "$STAGE/piper-config/ru_RU-dmitri-medium.onnx.json" models/
-printf 'Модели установлены; staging: %s\n' "$STAGE"
+while read -r name hash size url; do
+  case "$name" in ''|'#'*) continue;; esac
+  case "$name" in ru_RU-irina-medium.onnx|ru_RU-irina-medium.onnx.json|en_US-hfc_female-medium.onnx|en_US-hfc_female-medium.onnx.json) ;; *) exit 1;; esac
+  curl --fail --location --output "$STAGE/$name" "$url"
+  test "$(wc -c < "$STAGE/$name" | tr -d ' ')" = "$size"
+  actual=$(openssl dgst -sha256 -r "$STAGE/$name" | cut -d ' ' -f 1)
+  test "$actual" = "$hash"
+  test ! -e "models/$name"
+  mv "$STAGE/$name" "models/$name"
+done < native/asr-smoke-models.lock
+rmdir "$STAGE"
 )
 ```
 
-При ошибке `curl`, проверки или распаковки остановитесь, не переходите к следующей команде. Остатки скачивания остаются
-в `$STAGE` для проверки; готовый сервер их не использует. Не запускайте скрипты из скачанных архивов. Отдельно скачивать
-`alice_server/assets/silero_vad.onnx` не нужно: он уже включён в образ.
+Скрипт не заменяет существующие голоса. При ошибке остановитесь и проверьте
+staging-каталог. Это контроль целостности, а не независимая подпись поставщика;
+перед распространением изучите лицензии моделей. Отдельно скачивать
+`alice_server/assets/silero_vad.onnx` не нужно.
 
 ## 3. Создать собственные сертификаты
 
@@ -226,16 +194,20 @@ ttl = 30
 timeout_ms = 2000
 
 [asr]
-engine = "vosk"
-model_path = "/app/models/vosk-model-small-ru-0.22"
+engine = "gigaam"
+model = "v3_e2e_rnnt"
+model_path = "/opt/quasard/models/gigaam"
+threads = 2
 vad_model_path = "/app/alice_server/assets/silero_vad.onnx"
 device = "cpu"
 language = "ru"
 
 [tts]
 engine = "piper"
-model = "/app/models/ru_RU-dmitri-medium.onnx"
-config_path = "/app/models/ru_RU-dmitri-medium.onnx.json"
+model = "/app/models/ru_RU-irina-medium.onnx"
+config_path = "/app/models/ru_RU-irina-medium.onnx.json"
+model_en = "/app/models/en_US-hfc_female-medium.onnx"
+config_path_en = "/app/models/en_US-hfc_female-medium.onnx.json"
 
 [llm]
 base_url = "echo"
@@ -430,7 +402,7 @@ max_tool_calls = 4
 
 Модель на компьютере доступна контейнеру не через `127.0.0.1` компьютера: в Docker Desktop обычно используется
 `host.docker.internal`; на Linux нужен отдельно настроенный доступ к host или общей Docker-сети. `model_ru`/`model_en`
-выбирают **LLM**, а не язык Vosk и не голос Piper.
+выбирают **LLM**, а не язык распознавания GigaAM и не голос Piper.
 
 ### MCP-инструменты
 
@@ -483,7 +455,7 @@ docker compose -f compose.yaml -f configuration/compose.station.yaml up -d --no-
 | Не запускается HTTPS        | Пути leaf-файлов, соответствие пары, права UID/GID, занятый 443              |
 | DNS timeout/refused         | Публикация UDP **и** TCP 53, ACL, Docker NAT, firewall, upstream             |
 | DNS отвечает не тем IP      | Профиль Keenetic, кеш, второй DNS, IPv6/DoH, точные `rewrite_hosts`          |
-| `/_ready` возвращает 503    | Загрузка моделей, пути и совместимость Piper/Vosk; логи старта               |
+| `/_ready` возвращает 503    | Загрузка моделей, пути и совместимость Piper/GigaAM; логи старта               |
 | `echo` работает, модель нет | `base_url` из контейнера, ключ, model ID, доступность провайдера             |
 | Нет полного сетевого лога   | `log_level` не включает HAR recorder; [диагностика](docs/TRAFFIC_CAPTURE.md) |
 

@@ -28,7 +28,7 @@ func TestNativeSmoke(t *testing.T) {
 	if _, err := os.Stat(voice); os.IsNotExist(err) {
 		voice = filepath.Join(dir, "ru_RU-dmitri-medium.onnx")
 	}
-	e, err := New(Config{VoskModel: filepath.Join(dir, "vosk-model-small-ru-0.22"), VADModel: vadModel, PiperModel: voice, EspeakData: "/opt/quasard/share/espeak-ng-data"})
+	e, err := New(Config{GigaAMModel: os.Getenv("QUASARD_GIGAAM_MODEL"), VADModel: vadModel, PiperModel: voice, EspeakData: "/opt/quasard/share/espeak-ng-data"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,9 +84,9 @@ func TestNativeSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	if text == "" {
-		t.Fatal("Vosk did not recognize synthesized Russian speech")
+		t.Fatal("GigaAM did not recognize synthesized Russian speech")
 	}
-	t.Logf("Piper %d Hz, %d samples; Vosk: %s", p.SampleRate, len(p.Samples), text)
+	t.Logf("Piper %d Hz, %d samples; GigaAM: %s", p.SampleRate, len(p.Samples), text)
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)

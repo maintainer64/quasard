@@ -7,7 +7,7 @@ mkdir -p "$root/usr/local/bin" "$root/opt/quasard/lib" "$root/opt/quasard/share"
 cp /opt/quasard/bin/ffmpeg "$root/usr/local/bin/"
 cp -a /opt/quasard/share/espeak-ng-data "$root/opt/quasard/share/"
 cp -a /opt/quasard/share/licenses/. "$root/usr/share/licenses/quasard/"
-for file in /opt/quasard/lib/libvosk.so /opt/quasard/lib/libwhisper.so* /opt/quasard/lib/libggml*.so* /opt/quasard/lib/libpiper.so* /opt/quasard/lib/libonnxruntime.so*; do
+for file in /opt/quasard/lib/libpiper.so* /opt/quasard/lib/libonnxruntime.so*; do
  [ -f "$file" ] || continue
  cp -a "$file" "$root/opt/quasard/lib/$(basename "$file")"
 done
@@ -27,8 +27,6 @@ for file in /out/quasard /out/quasard-tools /opt/quasard/bin/ffmpeg "$root"/opt/
   esac
  done
 done
-# Native Vosk may load OpenMP dynamically; retain package runtime and notices.
-find /usr/lib -name 'libgomp.so.1' -exec cp -L '{}' "$root/opt/quasard/lib/" \;
-for package in libopus0 libgomp1 libc6 libstdc++6; do
+for package in libopus0 libc6 libstdc++6; do
  if [ -d "/usr/share/doc/$package" ]; then mkdir -p "$root/usr/share/licenses/quasard/$package"; cp -L "/usr/share/doc/$package/copyright" "$root/usr/share/licenses/quasard/$package/"; fi
 done

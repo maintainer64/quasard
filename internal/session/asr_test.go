@@ -26,7 +26,7 @@ func TestRecognitionTextOnlyAtDebug(t *testing.T) {
 		var logs diagnosticBuffer
 		slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: level})))
 		c := &Session{svc: &Services{Speech: recognitionSpeech{}}, device: "micro"}
-		result := c.transcribeVoice(&voice{ctx: context.Background(), request: "recognition-turn"}, make([]int16, 16000), nil)
+		result := c.transcribeVoice(&voice{ctx: context.Background(), request: "recognition-turn"}, make([]int16, 16000))
 		if result != "распознанная тестовая фраза" {
 			t.Fatal("wake-word normalization changed")
 		}
@@ -47,7 +47,7 @@ func (englishRecognitionSpeech) Transcribe(context.Context, []int16) (string, er
 }
 func TestEnglishWakeWordNormalization(t *testing.T) {
 	c := &Session{svc: &Services{Speech: englishRecognitionSpeech{}}, device: "english"}
-	got := c.transcribeVoice(&voice{ctx: context.Background()}, make([]int16, 16000), nil)
+	got := c.transcribeVoice(&voice{ctx: context.Background()}, make([]int16, 16000))
 	if got != "what is the weather?" {
 		t.Fatal("English wake word not removed")
 	}
@@ -63,10 +63,8 @@ func TestRecognitionAudioDownloadMatchesASRInput(t *testing.T) {
 	captures := debugaudio.New(func() bool { return level.Level() <= slog.LevelDebug })
 	c := &Session{svc: &Services{Speech: recognitionSpeech{}, DebugAudio: captures}, device: "station"}
 	pcm := make([]int16, 512*50)
-	flags := make([]bool, 50)
-	flags[5] = true
-	want := speechOnly(pcm, flags)
-	c.transcribeVoice(&voice{ctx: context.Background(), request: "captured-turn"}, pcm, flags)
+	want := pcm
+	c.transcribeVoice(&voice{ctx: context.Background(), request: "captured-turn"}, pcm)
 	match := regexp.MustCompile(`input_url=(\S+)`).FindStringSubmatch(logs.String())
 	if len(match) != 2 {
 		t.Fatal("missing download URL")
@@ -81,8 +79,8 @@ func TestRecognitionAudioDownloadMatchesASRInput(t *testing.T) {
 		t.Fatal("original audio lost")
 	}
 	asrPath := strings.Replace(path, "input.wav", "asr.wav", 1)
-	if get(asrPath).Body.Len() != 44+2*len(want) || len(want) >= len(pcm) {
-		t.Fatal("download not identical to VAD input")
+	if get(asrPath).Body.Len() != 44+2*len(want) {
+		t.Fatal("download not identical to contiguous ASR input")
 	}
 	var m debugaudio.Metadata
 	w := get(strings.Replace(path, "input.wav", "metadata.json", 1))
@@ -113,9 +111,7 @@ func TestGigaAMPreservesUtterance(t *testing.T) {
 	for i := range pcm {
 		pcm[i] = int16(i)
 	}
-	flags := make([]bool, 50)
-	flags[10] = true
-	c.transcribeVoice(&voice{ctx: context.Background()}, pcm, flags)
+	c.transcribeVoice(&voice{ctx: context.Background()}, pcm)
 	if len(recognizer.received) != len(pcm) {
 		t.Fatal("GigaAM utterance was spliced by VAD")
 	}

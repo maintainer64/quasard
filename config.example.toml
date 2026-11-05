@@ -34,13 +34,12 @@ max_concurrent = 64
 max_tcp_connections = 32
 rate_limit = 100 # Global queries/sec for UDP+TCP; excess UDP drops, TCP closes.
 
-# Russian GigaAM: engine="gigaam", model="v3_e2e_rnnt", model_path="/opt/quasard/models/gigaam", language="ru", threads=2
-# Automatic selection is restricted to RU/EN: see docs/ASR_RU_EN.md.
-# engine="whisper", model_path="models/ggml-base-q5_1.bin", language="auto", threads=2
+# CPU GigaAM is included in the Docker image. Silero VAD detects utterance endings.
 [asr]
-engine = "vosk"
-model = "vosk-model-small-ru-0.22"
-model_path = "models/vosk-model-small-ru-0.22"
+engine = "gigaam"
+model = "v3_e2e_rnnt"
+model_path = "/opt/quasard/models/gigaam"
+threads = 2
 vad_model_path = "alice_server/assets/silero_vad.onnx"
 device = "cpu"
 language = "ru"

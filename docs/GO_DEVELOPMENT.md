@@ -14,7 +14,7 @@
 | `internal/session`, `internal/aliceapi`, `internal/protocol` | JSON/AAPI WebSocket и сессии |
 | `internal/llm`, `internal/mcpclient` | OpenAI-совместимый LLM и автоматическая MCP-петля |
 | `internal/music` | Яндекс Музыка, очередь, авторизация |
-| `internal/speech`, `internal/audio`, `native` | Vosk/Whisper/Piper/Silero, Opus, CPU bridge |
+| `internal/speech`, `internal/audio`, `native` | GigaAM/Piper/Silero, Opus, CPU bridge |
 | `internal/httpapi`, `internal/store`, `internal/dnsproxy` | HTTP-моки, приватные данные, DNS |
 | `alice_server/aliceapi.desc`, `alice_server/assets` | Сохранённые дескрипторы и Silero VAD, не Python-runtime |
 
@@ -39,7 +39,7 @@ go run ./cmd/quasard-tools certs --help
 go run ./cmd/quasard-tools fake-llm --help
 ```
 
-Go-бинарник сервера без native speech не является готовой заменой Docker-образа с Vosk/Whisper/Piper. Для реального голоса используйте штатную Linux native-сборку.
+Go-бинарник сервера без native speech не является готовой заменой Docker-образа с GigaAM/Piper. Для реального голоса используйте штатную Linux native-сборку.
 
 ## Docker: готовый образ или сборка
 
@@ -98,18 +98,18 @@ Workflow-файлы в `.github/workflows/` — источник точных у
 - `publish.yml`: PR из этого же репозитория после проверок публикует `ghcr.io/maintainer64/quasard:dev-<номер PR>`; текущий пользовательский пример — `dev-1`. PR из внешнего fork не получает право публикации.
 - `release.yml`: tag-release workflow, Linux-бандлы и Windows tools. Фактическую доступность конкретного артефакта проверяйте в [Releases](https://github.com/maintainer64/quasard/releases) и GitHub Actions; наличие workflow не равно проверенному релизу.
 
-Linux-бандл использует включённый runtime и launcher `scripts/bundle-launch.sh`; модели/конфиг/сертификаты оператор готовит отдельно. Windows tools — утилиты, не обещание native Windows Vosk/Piper-сервера. Для серверного пути на Windows используйте Linux Docker/WSL и отдельно проверьте LAN-доступ к опубликованным портам.
+Linux-бандл использует включённый runtime и launcher `scripts/bundle-launch.sh`; GigaAM включён, голоса Piper/конфиг/сертификаты оператор готовит отдельно. Windows tools — утилиты, не обещание native Windows GigaAM/Piper-сервера. Для серверного пути на Windows используйте Linux Docker/WSL и отдельно проверьте LAN-доступ к опубликованным портам.
 
 ## Что действительно проверено
 
 Актуальный срез на 2026-11-01:
 
 - Go race-тесты, vet и lint прошли; тесты включают DNS, MCP, LLM auth/timeout/extras, бюджеты и отмену цепочки.
-- В Docker Linux ARM64 прошли реальные Piper → Ogg → Vosk, Silero и JSON/AAPI text/voice round-trip; HTTP/TLS, DNS UDP/TCP, forwarding и SIGHUP.
+- В Docker Linux ARM64 прошли реальные Piper → Ogg → GigaAM, Silero и JSON/AAPI text/voice round-trip; HTTP/TLS, DNS UDP/TCP, forwarding и SIGHUP.
 - Автоматический MCP в упакованном backend проверен с локальными fake LLM и MCP через JSON и AAPI: два инструмента подряд, окончательный ответ и Piper-аудио. Это не платный production endpoint.
 - На собственной Лайт (micro) установлен свой CA; владелец после перезагрузки подтвердил работу голосового ответа. Это ограниченный результат для конкретного устройства.
 - CI проверяет native-сборки/загрузку зависимостей/кодеки/упаковку, но не реальный аккаунт Music и не всю модельную inference-матрицу.
 
 Осталось: полная parity, реальный внешний LLM и production MCP, Music OAuth/CDN, микрофонный RU/EN ASR на реальных колонках, полные latency/RSS/startup-замеры, real-model AMD64 и low-memory устройства. Не заменяйте эти пункты успешной компиляцией. Контракт и исторический baseline — [parity.md](parity.md).
 
-Whisper auto RU/EN: [конфигурация, ресурсы и границы native-проверки](ASR_RU_EN.md).
+GigaAM CPU: [конфигурация, ресурсы и native-проверки](ASR_GIGAAM.md).

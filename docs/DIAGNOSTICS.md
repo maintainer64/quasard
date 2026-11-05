@@ -40,7 +40,6 @@ DEBUG. Событие `diagnostic logging changed` показывает выбр
 | --- | --- |
 | voice input started / finished | Длительность записи, наличие речи и причина завершения |
 | ASR started | Полная длительность аудио и длина выделенного для ASR фрагмента |
-| Whisper language selected | Выбранный ru/en, режим auto_ru_en/fixed, относительные оценки RU/EN |
 | GigaAM inference finished | Время frontend/encoder/decoder, число кадров и токенов, language=ru |
 | ASR finished | Время распознавания, raw_text и text после удаления обращения «Алиса» |
 | LLM turn started | Выбранный профиль, базовая модель, наличие MCP |

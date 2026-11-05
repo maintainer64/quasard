@@ -23,7 +23,7 @@ func TestNativeBilingualSmoke(t *testing.T) {
 			t.Skip("download Irina and hfc_female for bilingual smoke")
 		}
 	}
-	cfg := Config{VoskModel: filepath.Join(dir, "vosk-model-small-ru-0.22"), PiperModel: ru, PiperModelEN: en, EspeakData: "/opt/quasard/share/espeak-ng-data"}
+	cfg := Config{GigaAMModel: os.Getenv("QUASARD_GIGAAM_MODEL"), PiperModel: ru, PiperModelEN: en, EspeakData: "/opt/quasard/share/espeak-ng-data"}
 	e, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)

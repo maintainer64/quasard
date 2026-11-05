@@ -14,7 +14,7 @@ func TestDefaults(t *testing.T) {
 	if c.Server.Host != "0.0.0.0" || c.Server.HTTPSPort != 443 || c.Server.HTTPPort != 80 || c.Server.LogTraffic {
 		t.Fatalf("server defaults: %+v", c.Server)
 	}
-	if c.ASR.Engine != "vosk" || c.ASR.Model != "vosk-model-small-ru-0.22" || c.ASR.Device != "cpu" || c.ASR.Language != "ru" || c.TTS.Engine != "piper" {
+	if c.ASR.Engine != "gigaam" || c.ASR.Model != "v3_e2e_rnnt" || c.ASR.Device != "cpu" || c.ASR.Language != "ru" || c.TTS.Engine != "piper" {
 		t.Fatalf("speech defaults: %+v %+v", c.ASR, c.TTS)
 	}
 	if c.Device.UID != 100000001 || c.Device.Name != "Яндекс Станция" || c.Device.TimezoneOffsetSec != 10800 || c.LLM.Model != "qwen/qwen3.8-27b" || c.LLM.TimeoutS != 60 || !c.Music.Enabled {
@@ -130,19 +130,20 @@ func TestConfigPathPriority(t *testing.T) {
 
 func TestRejectLegacySpeech(t *testing.T) {
 	for _, tc := range []struct{ name, data, env, value, want string }{
-		{"incomplete gigaam", "[asr]\nengine='gigaam'", "", "", "asr.model"},
+		{"removed vosk", "[asr]\nengine='vosk'", "", "", "asr.engine"},
+		{"removed whisper", "[asr]\nengine='whisper'", "", "", "asr.engine"},
 		{"f5", "[tts]\nengine='f5'", "", "", "tts.engine"},
 		{"edge", "[tts]\nengine='edge'", "", "", "tts.engine"},
 		{"remote asr", "[asr]\nengine='openai'", "", "", "asr.engine"},
 		{"remote tts", "[tts]\nengine='openai'", "", "", "tts.engine"},
 		{"cuda", "[asr]\ndevice='cuda'", "", "", "CPU-only"},
 		{"auto", "[asr]\ndevice='auto'", "", "", "CPU-only"},
-		{"gigaam model", "[asr]\nmodel='v3_e2e_rnnt'", "", "", "GigaAM"},
+		{"unsupported model", "[asr]\nmodel='other'", "", "", "asr.model"},
 		{"f5 option", "[tts]\nf5_url='http://localhost:8777/v1'", "", "", "tts.f5_url"},
 		{"empty f5 option", "[tts]\nf5_voice_id=''", "", "", "tts.f5_voice_id"},
 		{"voice option", "[tts]\nvoice='ru-RU-SvetlanaNeural'", "", "", "tts.voice"},
 		{"remote option", "[asr]\nbase_url='http://localhost/v1'", "", "", "asr.base_url"},
-		{"env incomplete gigaam", "", "ALICE_ASR_ENGINE", "gigaam", "asr.model"},
+		{"env removed whisper", "", "ALICE_ASR_ENGINE", "whisper", "asr.engine"},
 		{"env f5", "", "ALICE_TTS_F5_URL", "http://localhost/v1", "ALICE_TTS_F5_URL"},
 		{"env empty f5", "", "ALICE_TTS_F5_VOICE_ID", "", "ALICE_TTS_F5_VOICE_ID"},
 	} {
@@ -167,7 +168,7 @@ func TestCanonicalExample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ASR.Engine != "vosk" || c.ASR.Device != "cpu" || c.TTS.Engine != "piper" || c.LLM.Model != "echo" {
+	if c.ASR.Engine != "gigaam" || c.ASR.Device != "cpu" || c.TTS.Engine != "piper" || c.LLM.Model != "echo" {
 		t.Fatalf("unsupported example defaults: %+v", c)
 	}
 }

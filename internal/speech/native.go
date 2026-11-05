@@ -6,14 +6,13 @@ package speech
 /*
 #cgo CFLAGS: -I/opt/quasard/include
 #cgo CXXFLAGS: -I/opt/quasard/include
-#cgo LDFLAGS: -L/opt/quasard/lib -Wl,-rpath,/opt/quasard/lib -lvosk -lwhisper -lggml -lpiper -lonnxruntime -lstdc++ -lm -ldl
+#cgo LDFLAGS: -L/opt/quasard/lib -Wl,-rpath,/opt/quasard/lib -lpiper -lonnxruntime -lstdc++ -lm -ldl
 #include "bridge.h"
 #include <stdlib.h>
 */
 import "C"
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"unsafe"
@@ -21,7 +20,6 @@ import (
 
 type backend struct {
 	ptr     *C.qs_engine
-	whisper *C.qs_whisper
 	gigaam  *gigaBackend
 	asrSlot chan struct{}
 }
@@ -39,24 +37,15 @@ func nativeError(p *C.char) error {
 	return fmt.Errorf("native speech: %s", C.GoString(p))
 }
 func newBackend(cfg Config) (*backend, error) {
-	if cfg.ASREngine != "" && cfg.ASREngine != "vosk" && cfg.ASREngine != "whisper" && cfg.ASREngine != "gigaam" {
-		return nil, fmt.Errorf("unsupported local ASR engine")
+	if cfg.ASREngine != "" && cfg.ASREngine != "gigaam" {
+		return nil, fmt.Errorf("unsupported ASR engine: only gigaam is available")
 	}
-	if (cfg.ASREngine == "whisper" || cfg.ASREngine == "gigaam") && (cfg.ASRThreads < 0 || cfg.ASRThreads > 8) {
+	if cfg.ASRThreads < 0 || cfg.ASRThreads > 8 {
 		return nil, fmt.Errorf("ASR threads must be between 1 and 8")
 	}
-	if cfg.ASREngine == "whisper" && cfg.WhisperModel == "" {
-		return nil, fmt.Errorf("Whisper model path is required")
+	if cfg.GigaAMModel == "" || (cfg.ASRLanguage != "" && cfg.ASRLanguage != "ru") {
+		return nil, fmt.Errorf("GigaAM requires a model directory and Russian language")
 	}
-	if (cfg.ASREngine == "" || cfg.ASREngine == "vosk") && cfg.VoskModel == "" {
-		return nil, fmt.Errorf("Vosk model path is required")
-	}
-	model := cfg.VoskModel
-	if cfg.ASREngine == "whisper" || cfg.ASREngine == "gigaam" {
-		model = ""
-	}
-	m, f := cstr(model)
-	defer f()
 	v, g := cstr(cfg.PiperModel)
 	defer g()
 	config := cfg.PiperConfig
@@ -68,7 +57,7 @@ func newBackend(cfg Config) (*backend, error) {
 	e, k := cstr(cfg.EspeakData)
 	defer k()
 	var err *C.char
-	p := C.qs_new(m, v, c, e, &err)
+	p := C.qs_new(v, c, e, &err)
 	if p == nil {
 		return nil, nativeError(err)
 	}
@@ -86,43 +75,16 @@ func newBackend(cfg Config) (*backend, error) {
 			return nil, nativeError(err)
 		}
 	}
-	b := &backend{ptr: p}
-	if cfg.ASREngine == "whisper" {
-		model, releaseModel := cstr(cfg.WhisperModel)
-		defer releaseModel()
-		language := cfg.ASRLanguage
-		if language == "" {
-			language = "auto"
-		}
-		lang, releaseLanguage := cstr(language)
-		defer releaseLanguage()
-		threads := cfg.ASRThreads
-		if threads == 0 {
-			threads = 2
-		}
-		b.whisper = C.qs_whisper_new(model, lang, C.int(threads), &err)
-		if b.whisper == nil {
-			C.qs_free(p)
-			return nil, nativeError(err)
-		}
-		b.asrSlot = make(chan struct{}, 1)
+	b := &backend{ptr: p, asrSlot: make(chan struct{}, 1)}
+	threads := cfg.ASRThreads
+	if threads == 0 {
+		threads = 2
 	}
-	if cfg.ASREngine == "gigaam" {
-		if cfg.GigaAMModel == "" || (cfg.ASRLanguage != "" && cfg.ASRLanguage != "ru") {
-			C.qs_free(p)
-			return nil, fmt.Errorf("GigaAM requires a model directory and Russian language")
-		}
-		threads := cfg.ASRThreads
-		if threads == 0 {
-			threads = 2
-		}
-		var failure error
-		b.gigaam, failure = newGigaBackend(cfg.GigaAMModel, threads)
-		if failure != nil {
-			C.qs_free(p)
-			return nil, failure
-		}
-		b.asrSlot = make(chan struct{}, 1)
+	var failure error
+	b.gigaam, failure = newGigaBackend(cfg.GigaAMModel, threads)
+	if failure != nil {
+		C.qs_free(p)
+		return nil, failure
 	}
 	return b, nil
 }
@@ -130,40 +92,10 @@ func (b *backend) close() {
 	if b.gigaam != nil {
 		C.qs_gigaam_free(b.gigaam.ptr)
 	}
-	if b.whisper != nil {
-		C.qs_whisper_free(b.whisper)
-	}
 	C.qs_free(b.ptr)
 }
 func (b *backend) transcribe(ctx context.Context, pcm []int16) (string, error) {
-	if b.gigaam != nil {
-		return b.transcribeGigaAM(ctx, pcm)
-	}
-	if b.whisper != nil {
-		return b.transcribeWhisper(ctx, pcm)
-	}
-	r := C.qs_recognizer(b.ptr)
-	if r == nil {
-		return "", fmt.Errorf("create Vosk recognizer failed")
-	}
-	defer C.qs_recognizer_free(r)
-	for len(pcm) > 0 {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-		n := min(len(pcm), 4000)
-		if C.qs_accept(r, (*C.int16_t)(unsafe.Pointer(&pcm[0])), C.int(n)) < 0 {
-			return "", fmt.Errorf("Vosk decoding failed")
-		}
-		pcm = pcm[n:]
-	}
-	var result struct {
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal([]byte(C.GoString(C.qs_result(r))), &result); err != nil {
-		return "", err
-	}
-	return result.Text, nil
+	return b.transcribeGigaAM(ctx, pcm)
 }
 func (b *backend) synthesize(ctx context.Context, text string, english bool) (PCM, error) {
 	t, f := cstr(text)
