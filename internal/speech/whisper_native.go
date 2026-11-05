@@ -22,11 +22,11 @@ func (b *backend) transcribeWhisper(ctx context.Context, pcm []int16) (string, e
 		return "", ctx.Err()
 	}
 	select {
-	case b.whisperSlot <- struct{}{}:
+	case b.asrSlot <- struct{}{}:
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
-	defer func() { <-b.whisperSlot }()
+	defer func() { <-b.asrSlot }()
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}

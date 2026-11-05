@@ -6,7 +6,7 @@
 
 ## Текущий статус: 2026-11-01
 
-- Go — основной сервер/CLI, CPU-only runtime; Vosk, Piper, Silero и аудиокодеки включаются через Linux native bridge. Модели Vosk/Piper скачиваются отдельно.
+- Go — основной сервер/CLI, CPU-only runtime; GigaAM/Whisper/Vosk, Piper, Silero и аудиокодеки включаются через Linux native bridge. Модели Vosk/Piper скачиваются отдельно.
 - Пройдены Go race-тесты, vet/lint и CI сборки/упаковки; в Docker Linux ARM64 проверена inference с реальными моделями и JSON/AAPI text/voice round-trip.
 - На собственной **Станции Лайт (micro)** установлен собственный CA, после ручной перезагрузки владелец подтвердил голосовой ответ. Это не универсальная сертификация firmware/моделей и не проверка всех функций облака.
 - Автоматическая MCP-петля проверена с локальными fake LLM/MCP и настоящим упакованным backend/Piper. Реальные платные API и production endpoints не проверялись.
@@ -24,7 +24,7 @@
 | Локальные команды | `internal/intents`, `internal/session` | Детерминированные команды, reset, volume/music directives; тесты | Все варианты распознавания и поведения устройства |
 | LLM | `internal/llm` | OpenAI-совместимый SSE, история, splitting, auth/extras/timeout, RU/EN model ID; mock-тесты | Реальные провайдеры, качество/задержка, лимиты |
 | MCP | `internal/mcpclient`, `internal/llm` | Streamable HTTP, несколько серверов, схемы, опциональный allowlist, автоматический бюджет/отмена; SDK tests и Docker mock smoke | Production endpoints, более широкая совместимость схем |
-| ASR/VAD | `internal/speech`, `native` | CPU Vosk/Silero, utterance/cancellation; ARM64 real-model smoke | AMD64 real-model, latency/RSS и микрофонные сценарии разных устройств |
+| ASR/VAD | `internal/speech`, `native` | CPU GigaAM/Whisper/Vosk/Silero, utterance/cancellation; ARM64 real-model smoke | AMD64 real-model, latency/RSS и микрофонные сценарии разных устройств |
 | TTS/аудио | `internal/speech`, `internal/audio`, `native` | CPU Piper, chunk/resample/Opus; ARM64 real-model и ограниченный station result | Голоса/прошивки, длительное воспроизведение, двуязычие |
 | Яндекс Музыка | `internal/music`, `internal/session` | HTTP-клиент, signing, очереди, device-code login, callbacks; фикстуры | Реальный аккаунт, OAuth, CDN, подписка и station playback |
 | Другие музыкальные провайдеры | Пока нет | Идеи расширения отмечены в README | YouTube Music и выбор провайдера в Go не реализованы |
@@ -34,7 +34,7 @@
 
 ## Что не заменено
 
-- GigaAM, F5/Edge/remote TTS adapters и F5-клонирование голоса отсутствуют. Piper — локальный синтезатор, не замена клонирования.
+- F5/Edge/remote TTS adapters и F5-клонирование голоса отсутствуют. Piper — локальный синтезатор, не замена клонирования.
 - `voice-prep` режет аудио, но не расшифровывает, не обучает голос и не отбирает образцы через VAD.
 - Нет универсального reverse proxy, HAR recorder, полного протокольного debug trace и отдельного historical push WebSocket.
 - Выбор `model_ru`/`model_en` меняет LLM, не ASR/TTS. Русские Vosk/Piper не становятся двуязычными.

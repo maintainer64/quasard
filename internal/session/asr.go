@@ -12,6 +12,11 @@ import (
 
 func (c *Session) transcribeVoice(v *voice, pcm []int16, flags []bool) string {
 	input := speechOnly(pcm, flags)
+	if c.svc.Config.ASR.Engine == "gigaam" {
+		// Preserve the contiguous waveform validated against original GigaAM.
+		// VAD ends the utterance but does not splice its internal timeline.
+		input = pcm
+	}
 	logger := slog.Default().With("device", c.device, "request_id", v.request)
 	logger.DebugContext(v.ctx, "ASR started", "engine", c.svc.Config.ASR.Engine, "language", c.svc.Config.ASR.Language, "audio_ms", len(pcm)*1000/16000, "recognition_audio_ms", len(input)*1000/16000)
 	captureID := ""

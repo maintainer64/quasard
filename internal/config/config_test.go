@@ -130,7 +130,7 @@ func TestConfigPathPriority(t *testing.T) {
 
 func TestRejectLegacySpeech(t *testing.T) {
 	for _, tc := range []struct{ name, data, env, value, want string }{
-		{"gigaam", "[asr]\nengine='gigaam'", "", "", "asr.engine"},
+		{"incomplete gigaam", "[asr]\nengine='gigaam'", "", "", "asr.model"},
 		{"f5", "[tts]\nengine='f5'", "", "", "tts.engine"},
 		{"edge", "[tts]\nengine='edge'", "", "", "tts.engine"},
 		{"remote asr", "[asr]\nengine='openai'", "", "", "asr.engine"},
@@ -142,7 +142,7 @@ func TestRejectLegacySpeech(t *testing.T) {
 		{"empty f5 option", "[tts]\nf5_voice_id=''", "", "", "tts.f5_voice_id"},
 		{"voice option", "[tts]\nvoice='ru-RU-SvetlanaNeural'", "", "", "tts.voice"},
 		{"remote option", "[asr]\nbase_url='http://localhost/v1'", "", "", "asr.base_url"},
-		{"env engine", "", "ALICE_ASR_ENGINE", "gigaam", "asr.engine"},
+		{"env incomplete gigaam", "", "ALICE_ASR_ENGINE", "gigaam", "asr.model"},
 		{"env f5", "", "ALICE_TTS_F5_URL", "http://localhost/v1", "ALICE_TTS_F5_URL"},
 		{"env empty f5", "", "ALICE_TTS_F5_VOICE_ID", "", "ALICE_TTS_F5_VOICE_ID"},
 	} {

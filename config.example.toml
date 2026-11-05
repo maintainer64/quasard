@@ -1,7 +1,8 @@
 # Go CPU-only backend. Скопируйте в config.toml; личный конфиг не хранится в Git.
 # Локальные порты Docker Compose, без перенастройки колонки/сети.
 # ALICE_<SECTION>_<KEY> переопределяет значение файла.
-# GigaAM, F5/Edge/remote TTS и CUDA не поддерживаются: старый конфиг нужно перенести.
+# GigaAM поддерживается как локальный CPU/ONNX engine: docs/ASR_GIGAAM.md.
+# F5/Edge/remote TTS и CUDA не поддерживаются: старый конфиг нужно перенести.
 [server]
 host = "0.0.0.0"
 http_port = 8080
@@ -33,6 +34,7 @@ max_concurrent = 64
 max_tcp_connections = 32
 rate_limit = 100 # Global queries/sec for UDP+TCP; excess UDP drops, TCP closes.
 
+# Russian GigaAM: engine="gigaam", model="v3_e2e_rnnt", model_path="models/gigaam", language="ru", threads=2
 # Automatic selection is restricted to RU/EN: see docs/ASR_RU_EN.md.
 # engine="whisper", model_path="models/ggml-base-q5_1.bin", language="auto", threads=2
 [asr]

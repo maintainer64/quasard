@@ -211,11 +211,11 @@ func Load(path string) (Config, error) {
 	if c.MCP.Enabled && (len(c.MCP.Servers) == 0 || len(c.MCP.Servers) > 8) {
 		return c, fmt.Errorf("mcp requires between 1 and 8 servers")
 	}
-	if c.ASR.Engine != "vosk" && c.ASR.Engine != "whisper" {
-		return c, fmt.Errorf("asr.engine=%q is unsupported: use local vosk or whisper (CPU-only)", c.ASR.Engine)
+	if c.ASR.Engine != "vosk" && c.ASR.Engine != "whisper" && c.ASR.Engine != "gigaam" {
+		return c, fmt.Errorf("asr.engine=%q is unsupported: use local vosk, whisper or gigaam (CPU-only)", c.ASR.Engine)
 	}
-	if c.ASR.Engine == "whisper" && (c.ASR.Threads < 1 || c.ASR.Threads > 8) {
-		return c, fmt.Errorf("asr.threads must be between 1 and 8 for whisper")
+	if (c.ASR.Engine == "whisper" || c.ASR.Engine == "gigaam") && (c.ASR.Threads < 1 || c.ASR.Threads > 8) {
+		return c, fmt.Errorf("asr.threads must be between 1 and 8")
 	}
 	if c.ASR.Engine == "whisper" && c.ASR.Language != "auto" && c.ASR.Language != "ru" && c.ASR.Language != "en" {
 		return c, fmt.Errorf("asr.language must be auto, ru or en for whisper")
@@ -229,8 +229,19 @@ func Load(path string) (Config, error) {
 	if c.ASR.Device != "cpu" {
 		return c, fmt.Errorf("asr.device=%q is unsupported: Go backend is CPU-only; use cpu", c.ASR.Device)
 	}
-	if strings.HasPrefix(strings.ToLower(c.ASR.Model), "v3_") {
-		return c, fmt.Errorf("asr.model=%q is a legacy GigaAM model: use a Vosk model and asr.model_path from config.example.toml", c.ASR.Model)
+	if c.ASR.Engine == "gigaam" {
+		if c.ASR.Model != "v3_e2e_rnnt" || c.ASR.ModelPath == "" {
+			return c, fmt.Errorf("asr.model must be v3_e2e_rnnt with an exported ONNX model_path for gigaam")
+		}
+		if c.ASR.Language != "ru" {
+			return c, fmt.Errorf("asr.language must be ru for GigaAM v3_e2e_rnnt")
+		}
+		if c.ASR.MaxUtteranceMS > 25000 {
+			return c, fmt.Errorf("GigaAM max_utterance_ms must not exceed 25000")
+		}
+	}
+	if c.ASR.Engine != "gigaam" && strings.HasPrefix(strings.ToLower(c.ASR.Model), "v3_") {
+		return c, fmt.Errorf("asr.model=%q is a GigaAM model: select asr.engine=gigaam and an exported ONNX model_path", c.ASR.Model)
 	}
 	return c, nil
 }

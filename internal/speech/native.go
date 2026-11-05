@@ -20,9 +20,10 @@ import (
 )
 
 type backend struct {
-	ptr         *C.qs_engine
-	whisper     *C.qs_whisper
-	whisperSlot chan struct{}
+	ptr     *C.qs_engine
+	whisper *C.qs_whisper
+	gigaam  *gigaBackend
+	asrSlot chan struct{}
 }
 type vadBackend struct{ ptr *C.qs_vad }
 
@@ -38,20 +39,20 @@ func nativeError(p *C.char) error {
 	return fmt.Errorf("native speech: %s", C.GoString(p))
 }
 func newBackend(cfg Config) (*backend, error) {
-	if cfg.ASREngine != "" && cfg.ASREngine != "vosk" && cfg.ASREngine != "whisper" {
+	if cfg.ASREngine != "" && cfg.ASREngine != "vosk" && cfg.ASREngine != "whisper" && cfg.ASREngine != "gigaam" {
 		return nil, fmt.Errorf("unsupported local ASR engine")
 	}
-	if cfg.ASREngine == "whisper" && (cfg.ASRThreads < 0 || cfg.ASRThreads > 8) {
-		return nil, fmt.Errorf("Whisper threads must be between 1 and 8")
+	if (cfg.ASREngine == "whisper" || cfg.ASREngine == "gigaam") && (cfg.ASRThreads < 0 || cfg.ASRThreads > 8) {
+		return nil, fmt.Errorf("ASR threads must be between 1 and 8")
 	}
 	if cfg.ASREngine == "whisper" && cfg.WhisperModel == "" {
 		return nil, fmt.Errorf("Whisper model path is required")
 	}
-	if cfg.ASREngine != "whisper" && cfg.VoskModel == "" {
+	if (cfg.ASREngine == "" || cfg.ASREngine == "vosk") && cfg.VoskModel == "" {
 		return nil, fmt.Errorf("Vosk model path is required")
 	}
 	model := cfg.VoskModel
-	if cfg.ASREngine == "whisper" {
+	if cfg.ASREngine == "whisper" || cfg.ASREngine == "gigaam" {
 		model = ""
 	}
 	m, f := cstr(model)
@@ -104,17 +105,40 @@ func newBackend(cfg Config) (*backend, error) {
 			C.qs_free(p)
 			return nil, nativeError(err)
 		}
-		b.whisperSlot = make(chan struct{}, 1)
+		b.asrSlot = make(chan struct{}, 1)
+	}
+	if cfg.ASREngine == "gigaam" {
+		if cfg.GigaAMModel == "" || (cfg.ASRLanguage != "" && cfg.ASRLanguage != "ru") {
+			C.qs_free(p)
+			return nil, fmt.Errorf("GigaAM requires a model directory and Russian language")
+		}
+		threads := cfg.ASRThreads
+		if threads == 0 {
+			threads = 2
+		}
+		var failure error
+		b.gigaam, failure = newGigaBackend(cfg.GigaAMModel, threads)
+		if failure != nil {
+			C.qs_free(p)
+			return nil, failure
+		}
+		b.asrSlot = make(chan struct{}, 1)
 	}
 	return b, nil
 }
 func (b *backend) close() {
+	if b.gigaam != nil {
+		C.qs_gigaam_free(b.gigaam.ptr)
+	}
 	if b.whisper != nil {
 		C.qs_whisper_free(b.whisper)
 	}
 	C.qs_free(b.ptr)
 }
 func (b *backend) transcribe(ctx context.Context, pcm []int16) (string, error) {
+	if b.gigaam != nil {
+		return b.transcribeGigaAM(ctx, pcm)
+	}
 	if b.whisper != nil {
 		return b.transcribeWhisper(ctx, pcm)
 	}

@@ -94,3 +94,34 @@ func TestRecognitionAudioDownloadMatchesASRInput(t *testing.T) {
 		t.Fatal("capture accessible at INFO")
 	}
 }
+
+// GigaAM sees the same contiguous waveform that was evaluated offline.
+type waveformRecognition struct {
+	fakeSpeech
+	received []int16
+}
+
+func (r *waveformRecognition) Transcribe(_ context.Context, pcm []int16) (string, error) {
+	r.received = append([]int16(nil), pcm...)
+	return "тест", nil
+}
+func TestGigaAMPreservesUtterance(t *testing.T) {
+	recognizer := &waveformRecognition{}
+	c := &Session{svc: &Services{Speech: recognizer}}
+	c.svc.Config.ASR.Engine = "gigaam"
+	pcm := make([]int16, 512*50)
+	for i := range pcm {
+		pcm[i] = int16(i)
+	}
+	flags := make([]bool, 50)
+	flags[10] = true
+	c.transcribeVoice(&voice{ctx: context.Background()}, pcm, flags)
+	if len(recognizer.received) != len(pcm) {
+		t.Fatal("GigaAM utterance was spliced by VAD")
+	}
+	for i := range pcm {
+		if recognizer.received[i] != pcm[i] {
+			t.Fatal("GigaAM waveform was changed")
+		}
+	}
+}

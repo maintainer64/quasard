@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Package speech owns resident Vosk/Whisper and Piper models and per-request Silero VAD.
+// Package speech owns resident GigaAM/Vosk/Whisper and Piper models and per-request Silero VAD.
 package speech
 
 import (
@@ -14,7 +14,7 @@ import (
 
 type PCM = audio.PCM
 type Config struct {
-	ASREngine, ASRLanguage, WhisperModel                                 string
+	ASREngine, ASRLanguage, WhisperModel, GigaAMModel                    string
 	ASRThreads                                                           int
 	VoskModel, VADModel, PiperModel, PiperConfig, EspeakData, LibraryDir string
 	PiperModelEN, PiperConfigEN                                          string
@@ -53,7 +53,7 @@ func New(cfg Config) (*Engine, error) {
 	return &Engine{backend: b, cfg: cfg}, nil
 }
 
-// Transcribe uses a fresh recognizer while keeping the Vosk model resident.
+// Transcribe decodes mono PCM16/16 kHz with the selected resident ASR backend.
 func (e *Engine) Transcribe(ctx context.Context, pcm []int16) (string, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()

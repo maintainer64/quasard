@@ -20,6 +20,20 @@ typedef struct qs_whisper_result {
  float en_probability;
 } qs_whisper_result;
 int qs_whisper_transcribe(qs_whisper *w,const int16_t *pcm,int count,qs_whisper_result *result);
+typedef struct qs_gigaam qs_gigaam;
+typedef struct qs_gigaam_result {
+ int32_t *tokens;
+ int count;
+ int frames;
+ double frontend_ms;
+ double encoder_ms;
+ double decoder_ms;
+} qs_gigaam_result;
+qs_gigaam *qs_gigaam_new(const char *encoder,const char *decoder,const char *joiner,const float *mel,int threads,char **error);
+void qs_gigaam_free(qs_gigaam *g);
+void qs_gigaam_cancel(qs_gigaam *g);
+int qs_gigaam_reset(qs_gigaam *g,char **error);
+int qs_gigaam_transcribe(qs_gigaam *g,const int16_t *pcm,int count,qs_gigaam_result *result,char **error);
 typedef struct qs_vad qs_vad;
 void *qs_create_piper(const char *voice,const char *config,const char *espeak,char **error);
 qs_engine *qs_new(const char *model,const char *voice,const char *config,const char *espeak,char **error);
