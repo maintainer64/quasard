@@ -11,6 +11,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"unsafe"
 )
@@ -100,4 +101,11 @@ func (b *backend) transcribeGigaAM(ctx context.Context, pcm []int16) (string, er
 		"frontend_ms", float64(result.frontend_ms), "encoder_ms", float64(result.encoder_ms),
 		"decoder_ms", float64(result.decoder_ms), "frames", int(result.frames), "tokens", len(tokens))
 	return text, err
+}
+
+func requestLogger(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(loggerContextKey{}).(*slog.Logger); ok && logger != nil {
+		return logger
+	}
+	return slog.Default()
 }
