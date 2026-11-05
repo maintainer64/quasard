@@ -28,6 +28,59 @@ def fingerprint(path):
     return {"bytes": path.stat().st_size, "sha256": digest.hexdigest()}
 
 
+
+MODEL_REPOSITORY = "ai-sage/GigaAM-v3"
+MODEL_REVISION = "7655ad717f8122257385bb4b2f373db3697e8680"
+MODEL_SHA256 = "afc6dcbae8320ea56f2cddebc0f13fbf62c9d59b6ddcad899782623c8610826a"
+TOKENIZER_SHA256 = "828c12c991019eef952a960661f25a92d6ad279591e2ea466b4aeddf1d20a18a"
+
+
+def load_source(download_root):
+    # The official CDN has an expired TLS certificate on some routes. Use the
+    # publisher's immutable HTTPS mirror, never disable certificate validation.
+    # HF's wrapper prefix differs, but all 561 tensors were checked bit-for-bit
+    # against the original v3_e2e_rnnt checkpoint before pinning this revision.
+    from huggingface_hub import hf_hub_download
+    from omegaconf import OmegaConf
+
+    def get(name):
+        return Path(hf_hub_download(MODEL_REPOSITORY, name, revision=MODEL_REVISION,
+                                   cache_dir=str(download_root)))
+
+    weights, tokenizer, config_file = get("pytorch_model.bin"), get("tokenizer.model"), get("config.json")
+    if fingerprint(weights)["sha256"] != MODEL_SHA256 or fingerprint(tokenizer)["sha256"] != TOKENIZER_SHA256:
+        raise ValueError("Official GigaAM mirror checksum mismatch")
+    config = json.loads(config_file.read_text())["cfg"]["model"]["cfg"]
+    targets = {"modeling_gigaam.FeatureExtractor": "gigaam.preprocess.FeatureExtractor",
+               "modeling_gigaam.ConformerEncoder": "gigaam.encoder.ConformerEncoder",
+               "modeling_gigaam.RNNTHead": "gigaam.decoder.RNNTHead",
+               "modeling_gigaam.RNNTGreedyDecoding": "gigaam.decoding.RNNTGreedyDecoding"}
+
+    def local_targets(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "_target_":
+                    if item not in targets:
+                        raise ValueError("Unexpected GigaAM configuration target")
+                    value[key] = targets[item]
+                else:
+                    local_targets(item)
+        elif isinstance(value, list):
+            for item in value:
+                local_targets(item)
+
+    local_targets(config)
+    config["decoding"]["model_path"] = str(tokenizer)
+    config["encoder"]["flash_attn"] = False
+    state = torch.load(weights, map_location="cpu", weights_only=True)
+    if not all(key.startswith("model.") for key in state):
+        raise ValueError("Unexpected official GigaAM state dictionary")
+    model = gigaam.GigaAMASR(OmegaConf.create(config))
+    model.load_state_dict({key.removeprefix("model."): value for key, value in state.items()}, strict=True)
+    del state
+    return model.eval().float().to("cpu"), weights, tokenizer
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -39,8 +92,7 @@ def main():
     if output.exists():
         parser.error("Output exists; choose a new output directory")
     torch.set_num_threads(2)
-    model = gigaam.load_model("v3_e2e_rnnt", device="cpu", fp16_encoder=False,
-                              use_flash=False, download_root=str(args.download_root))
+    model, source_weights, source_tokenizer = load_source(args.download_root)
     cfg = model.cfg
     frontend = model.preprocessor.featurizer[0]
     expected = (frontend.n_fft, frontend.win_length, frontend.hop_length,
@@ -70,7 +122,7 @@ def main():
                     else "byte" if tokenizer.is_byte(i) else "normal")
             tokens.append({"piece": tokenizer.id_to_piece(i), "kind": kind})
         proto = sentencepiece_model_pb2.ModelProto()
-        proto.ParseFromString((args.download_root / "v3_e2e_rnnt_tokenizer.model").read_bytes())
+        proto.ParseFromString(source_tokenizer.read_bytes())
         manifest = {"schema_version": 1, "model": "v3_e2e_rnnt", "sample_rate": 16000,
                     "fft_size": 320, "hop_size": 160, "mel_bins": 64, "center": False,
                     "mel_filters": frontend.mel_scale.fb.T.contiguous().flatten().tolist(),
@@ -81,8 +133,9 @@ def main():
                     "files": {},
                     "source": {"repository": "https://github.com/salute-developers/GigaAM",
                                "revision": "7447938d791c4f3e643386ee22c33777004293a5",
-                               "weights": fingerprint(args.download_root / "v3_e2e_rnnt.ckpt"),
-                               "tokenizer": fingerprint(args.download_root / "v3_e2e_rnnt_tokenizer.model"),
+                               "weights": fingerprint(source_weights),
+                               "model_repository": MODEL_REPOSITORY, "model_revision": MODEL_REVISION,
+                               "tokenizer": fingerprint(source_tokenizer),
                                "versions": {p: importlib.metadata.version(p) for p in
                                             ("gigaam", "torch", "torchaudio", "onnx", "onnxruntime")}}}
         # Exporting and quantising need separate large buffers. Release the

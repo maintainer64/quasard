@@ -12,7 +12,7 @@ native bridge; Python, PyTorch, внешний ASR-сервис и GPU при р
 [asr]
 engine = "gigaam"
 model = "v3_e2e_rnnt"
-model_path = "models/gigaam"
+model_path = "/opt/quasard/models/gigaam"
 language = "ru"
 device = "cpu"
 threads = 2
@@ -21,7 +21,9 @@ max_utterance_ms = 15000
 
 `model_path` указывает на каталог с `manifest.json`, `encoder.onnx`,
 `decoder.onnx`, `joiner.onnx`, `LICENSE.GigaAM`. Для Docker это обычно
-`/app/models/gigaam` внутри models volume. При старте проверяются схема, размер
+`/opt/quasard/models/gigaam`: этот готовый набор уже включён в образ и не
+перекрывается models volume с голосами. В Linux bundle он находится в
+`models/gigaam` рядом с launch-скриптом. При старте проверяются схема, размер
 и SHA-256 графов, затем выполняется прогрев до readiness.
 
 Это русская модель: `auto` и `en` отклоняются конфигурацией. Для автоматического
@@ -30,17 +32,21 @@ RU/EN остаётся отдельный [Whisper engine](ASR_RU_EN.md). LLM-п
 
 ## Подготовить модель
 
-В текущем рабочем checkout подготовленный набор хранится в `models/gigaam/`.
-Большие бинарные веса исключены из Git; исходники native bridge и экспортера
-находятся в проекте. Для нового checkout можно скачать артефакт
-`gigaam-v3-e2e-rnnt-RUN_ID` успешно завершённого PR/release workflow либо экспортировать:
+Готовый набор хранится в `models/gigaam/` в обычном Git, без LFS. Encoder
+разделён на части не более 48 MiB из-за ограничения размера файлов GitHub.
+При сборке Docker склеивает части и проверяет SHA-256 всех трёх графов,
+затем копирует готовый набор в образ и Linux bundle. Для работы вне образа
+в Linux выполните `sh scripts/assemble-gigaam.sh models/gigaam .dev/gigaam-ready`.
+Экспорта и скачивания GigaAM с внешнего CDN при сборке/запуске не требуется.
+
+Для самостоятельного воспроизведения модели в новом отдельном каталоге:
 
 ```sh
 python3 -m venv .dev/gigaam-export
 # Linux: сначала CPU-варианты torch/torchaudio, затем остальные зависимости.
 .dev/gigaam-export/bin/python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 .dev/gigaam-export/bin/python -m pip install -r native/requirements-gigaam-export.txt
-.dev/gigaam-export/bin/python native/export-gigaam.py --output models/gigaam
+.dev/gigaam-export/bin/python native/export-gigaam.py --output models/gigaam-rebuilt
 ```
 
 На macOS установка torch/torchaudio выполняется из обычного PyPI без Linux CPU
@@ -51,7 +57,12 @@ MatMul/Gemm encoder в INT8 и оставляет RNNT decoder/joiner в float32
 
 Официальный код закреплён на
 [`7447938d791c4f3e643386ee22c33777004293a5`](https://github.com/salute-developers/GigaAM/tree/7447938d791c4f3e643386ee22c33777004293a5).
-Загрузчик GigaAM проверяет upstream checksum исходных весов. В manifest записаны
+Веса берутся из официального `ai-sage/GigaAM-v3` на Hugging Face, revision
+`7655ad717f8122257385bb4b2f373db3697e8680`, по HTTPS с обычной проверкой TLS.
+Все 561 тензор проверены на побитовое совпадение с исходным `v3_e2e_rnnt`.
+Экспортёр проверяет закреплённые SHA-256 весов и токенизатора, загружает только
+тензоры (`weights_only=True`) и использует классы из закреплённого пакета GigaAM;
+remote code с Hugging Face не исполняется. В manifest записаны
 SHA-256 весов/токенизатора, параметры frontend, словарь SentencePiece, контрольные
 суммы ONNX и версии экспортирующих библиотек. Полная MIT-лицензия включена в набор.
 Экспортёр не принимает и не упаковывает пользовательское аудио.
@@ -75,8 +86,8 @@ SHA-256 весов/токенизатора, параметры frontend, сло
 
 Публикуемые образы amd64/arm64 проходят `TestNativeGigaAM` на публичных
 синтетических фразах Irina → Opus → PCM → GigaAM, на разных длинах, отмене,
-ожидании очереди и повторном использовании контекста. CI экспортирует только
-официальные веса и не получает пользовательские записи.
+ожидании очереди и повторном использовании контекста. CI использует готовые
+готовые веса из репозитория и не получает пользовательские записи.
 
 Локально проверены исходная тихая запись, её VAD-фрагмент и варианты обработки.
 В Linux ARM64 с 2 CPU и лимитом 1536 MiB исходная фраза распознаётся без усиления.

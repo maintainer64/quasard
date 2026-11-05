@@ -53,7 +53,7 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
           ARCH: ${{ matrix.arch }}
         run: sh scripts/build-release.sh "$TAG" "$ARCH" "$RUNNER_TEMP/dist"
-      - name: Verify extracted bundle without models
+      - name: Verify extracted bundle loader
         env:
           TAG: ${{ needs.version.outputs.tag }}
           ARCH: ${{ matrix.arch }}
@@ -141,7 +141,7 @@ jobs:
           cd dist
           sha256sum -- *.tar.gz *.zip > SHA256SUMS
           sha256sum -c SHA256SUMS
-          printf 'Version: %s\nCommit: %s\nImage: ghcr.io/%s:%s (linux/amd64, linux/arm64)\nLinux: glibc native bundles, models separate. Windows: tools only. Native model inference and station parity are not established by build checks.\n' "$TAG" "$GITHUB_SHA" "$GH_REPO" "$TAG" > BUILD-MANIFEST.txt
+          printf 'Version: %s\nCommit: %s\nImage: ghcr.io/%s:%s (linux/amd64, linux/arm64)\nLinux: glibc native bundles with GigaAM; voices and other ASR models separate. Windows: tools only. Native ASR fixtures run before image publishing; station parity is not established by build checks.\n' "$TAG" "$GITHUB_SHA" "$GH_REPO" "$TAG" > BUILD-MANIFEST.txt
           args=()
           if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
           gh release create "$TAG" --verify-tag --generate-notes --notes-file BUILD-MANIFEST.txt "${args[@]}" -- *.tar.gz *.zip SHA256SUMS BUILD-MANIFEST.txt

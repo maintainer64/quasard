@@ -17,6 +17,9 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 RUN flags="-s -w -X github.com/maintainer64/quasard/internal/buildinfo.Version=$VERSION -X github.com/maintainer64/quasard/internal/buildinfo.Commit=$COMMIT -X github.com/maintainer64/quasard/internal/buildinfo.Date=$BUILD_DATE"; go build -tags native -trimpath -ldflags="$flags" -o /out/quasard ./cmd/quasard && go build -tags native -trimpath -ldflags="$flags" -o /out/quasard-tools ./cmd/quasard-tools
+COPY scripts/assemble-gigaam.sh ./scripts/
+COPY models/gigaam /var/tmp/gigaam-parts
+RUN sh scripts/assemble-gigaam.sh /var/tmp/gigaam-parts /opt/quasard/models/gigaam && rm -rf /var/tmp/gigaam-parts
 COPY native/runtime-files.sh ./native/
 COPY scripts/go-notices.sh ./scripts/
 RUN sh scripts/go-notices.sh /opt/quasard/share/licenses
@@ -32,7 +35,8 @@ COPY scripts/bundle-launch.sh /bundle/launch
 COPY config.example.toml LICENSE THIRD_PARTY_NOTICES.md /bundle/
 COPY alice_server/aliceapi.desc /bundle/alice_server/aliceapi.desc
 COPY alice_server/assets /bundle/alice_server/assets
-RUN mkdir -p /bundle/runtime/usr/local/bin /bundle/bin /bundle/data /bundle/models /bundle/certs && cp -a /runtime/. /bundle/runtime/ && cp /out/* /bundle/runtime/usr/local/bin/ && chmod 755 /bundle/launch && ln -s launch /bundle/quasard && ln -s launch /bundle/quasard-tools && ln -s ../launch /bundle/bin/ffmpeg && printf 'Copy config.example.toml to config.toml; run ./quasard --config config.toml. Requires Linux/glibc kernel environment; native loader/libraries included. Models are NOT included. Windows server: Docker/WSL2 only. See https://github.com/maintainer64/quasard/tree/%s/docs\n' "$COMMIT" > /bundle/README.txt
+RUN mkdir -p /bundle/models && cp -a /opt/quasard/models/gigaam /bundle/models/gigaam
+RUN mkdir -p /bundle/runtime/usr/local/bin /bundle/bin /bundle/data /bundle/models /bundle/certs && cp -a /runtime/. /bundle/runtime/ && cp /out/* /bundle/runtime/usr/local/bin/ && chmod 755 /bundle/launch && ln -s launch /bundle/quasard && ln -s launch /bundle/quasard-tools && ln -s ../launch /bundle/bin/ffmpeg && printf 'Copy config.example.toml to config.toml; run ./quasard --config config.toml. Requires Linux/glibc kernel environment; native loader/libraries included. GigaAM ASR is included; Piper voices and other ASR models are separate. Windows server: Docker/WSL2 only. See https://github.com/maintainer64/quasard/tree/%s/docs\n' "$COMMIT" > /bundle/README.txt
 
 FROM scratch AS bundle
 COPY --from=bundle-build /bundle/ /
@@ -41,6 +45,7 @@ FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d55
 WORKDIR /app
 COPY --from=build /runtime/ /
 COPY --from=build /out/ /usr/local/bin/
+COPY --from=build /opt/quasard/models/gigaam /opt/quasard/models/gigaam
 COPY alice_server/aliceapi.desc /app/alice_server/aliceapi.desc
 COPY alice_server/assets /app/alice_server/assets
 COPY LICENSE THIRD_PARTY_NOTICES.md /app/

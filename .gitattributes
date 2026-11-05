@@ -1,0 +1,2 @@
+models/gigaam/manifest.json linguist-generated=true
+models/gigaam/encoder.onnx.part-* -text -diff

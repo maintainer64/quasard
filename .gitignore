@@ -19,7 +19,9 @@ system_prompt.txt
 data/
 voice/
 certs/
-models/
+models/*
+!models/gigaam/
+models/gigaam/encoder.onnx
 logs/
 *.har
 *.log

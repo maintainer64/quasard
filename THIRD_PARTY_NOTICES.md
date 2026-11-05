@@ -33,5 +33,5 @@ separate distribution-approval variable.
 
 - GigaAM v3_e2e_rnnt: MIT, source pinned to salute-developers/GigaAM
   7447938d791c4f3e643386ee22c33777004293a5. Exported ONNX weights and the complete
-  upstream LICENSE are distributed separately from the runtime image. The
+  upstream LICENSE are tracked in Git LFS and included in the runtime image/bundle. The
   conversion manifest records model/tokenizer hashes and tool versions.

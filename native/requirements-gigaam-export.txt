@@ -1,1 +1,2 @@
 gigaam[torch] @ git+https://github.com/salute-developers/GigaAM.git@7447938d791c4f3e643386ee22c33777004293a5
+huggingface-hub==0.36.2

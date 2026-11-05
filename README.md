@@ -98,7 +98,7 @@ mkdir -p configuration data models certs
 [Whisper с language=auto](docs/ASR_RU_EN.md). Для русского доступен
 [GigaAM v3_e2e_rnnt через native ONNX Runtime](docs/ASR_GIGAAM.md). Пример ниже оставляет прежний Vosk.
 
-В готовом образе есть библиотеки GigaAM/Vosk/Whisper/Piper и Silero VAD, но **нет больших моделей распознавания и голоса**. Начальный
+В готовом образе есть библиотеки GigaAM/Vosk/Whisper/Piper и Silero VAD, готовая GigaAM v3_e2e_rnnt; голоса Piper и другие ASR-модели скачиваются отдельно. Начальный
 вариант: `vosk-model-small-ru-0.22` и русский голос `ru_RU-dmitri-medium`.
 
 Ниже закреплены ревизии файлов и SHA-256 из проверенного набора артефактов. Это контроль целостности, не независимая
