@@ -1,0 +1,23 @@
+name: PR development image
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+concurrency:
+  group: dev-image-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  test:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/checks.yml
+  image:
+    needs: test
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/images.yml
+    with:
+      tag: dev-${{ github.event.pull_request.number }}
+      publish: true

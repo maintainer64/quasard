@@ -1,3 +1,10 @@
+# Go and local editor output
+bin/
+dist/
+coverage.out
+.dev/
+.idea/
+
 # окружения и кэш
 .venv/
 __pycache__/
@@ -5,12 +12,16 @@ tts_bench/
 
 # личное: ключи, токены, конфиг, промпт, голос, данные станций, сертификаты, логи трафика
 config.toml
+configuration/
+compose.dns.yaml
 groq_key.txt
 system_prompt.txt
 data/
 voice/
 certs/
-models/
+models/*
+!models/gigaam/
+models/gigaam/encoder.onnx
 logs/
 *.har
 *.log

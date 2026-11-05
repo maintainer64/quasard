@@ -1,0 +1,44 @@
+name: Checks
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install codec for audio tests
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Check formatting
+        run: |
+          files=$(gofmt -l cmd internal)
+          if [ -n "$files" ]; then
+            printf 'Run gofmt on:\n%s\n' "$files"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Race tests
+        run: go test -race -count=1 -timeout=10m ./...
+      - name: Build and shell syntax
+        run: |
+          go build ./cmd/quasard ./cmd/quasard-tools
+          for script in native/*.sh scripts/*.sh; do sh -n "$script"; done
+      - name: Go lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+      - name: Cross-build Windows tools
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=windows GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/quasard-tools-$arch.exe" ./cmd/quasard-tools
+          done
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color

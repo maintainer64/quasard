@@ -1,0 +1,5 @@
+# Public pinned Piper voices for native GigaAM/Piper CI fixtures.
+ru_RU-irina-medium.onnx 8ff38212d23da300bbe3705c645e6e5b9475f0bfde01558eb17813e22acaaaaa 63201294 https://huggingface.co/rhasspy/piper-voices/resolve/b4e358ffcb232591bf73a540e70f7de528e4174a/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx
+ru_RU-irina-medium.onnx.json c2ec28bb38e2b59e93b959b3e40348c1afebbd272f30fed5d41205d08e98a9d7 4765 https://huggingface.co/rhasspy/piper-voices/resolve/b4e358ffcb232591bf73a540e70f7de528e4174a/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json
+en_US-hfc_female-medium.onnx 914c473788fc1fa8b63ace1cdcdb44588f4ae523d3ab37df1536616835a140b7 63201294 https://huggingface.co/rhasspy/piper-voices/resolve/b4e358ffcb232591bf73a540e70f7de528e4174a/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx
+en_US-hfc_female-medium.onnx.json 03f1fa0622b80463283592d97aca9f6e89aec345a5c56b7257723e0093c58b6c 5033 https://huggingface.co/rhasspy/piper-voices/resolve/b4e358ffcb232591bf73a540e70f7de528e4174a/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx.json

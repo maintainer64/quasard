@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: quasard-go
+services:
+  quasard:
+    build: .
+    image: quasard-go:local
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443"
+    # Normal config.toml is authoritative; no LLM defaults override its values.
+    # For env overrides add ALICE_<SECTION>_<KEY> explicitly in a local override.
+    volumes:
+      - type: bind
+        source: ./config.toml
+        target: /app/config.toml
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./data:/app/data
+      - ./models:/app/models:ro
+      - ./certs:/app/certs:ro
+    restart: "no"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    cpus: 2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
